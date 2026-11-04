@@ -2,7 +2,7 @@
 // DICOM Log Analyser UI. Plain JavaScript, no external libraries or network calls other than this application's API.
 // All log content is inserted with textContent (never as HTML).
 
-/** @type {{csrfToken: string, mode: string, role: string, identity: string, version: string, platform: string, sourceRoots: string[], maxUploadMb: number, scanIntervalMinutes: number, formats: {id: string, name: string}[]} | null} */
+/** @type {{csrfToken: string, mode: string, role: string, identity: string, version: string, platform: string, sourceRoots: string[], maxUploadMb: number, scanIntervalMinutes: number, liveIntervalSeconds: number, formats: {id: string, name: string}[]} | null} */
 let session = null;
 /** @type {any[]} */
 let sourcesCache = [];
@@ -631,6 +631,33 @@ function applyLiveFilter() {
   }
 }
 
+// ---------- Fresh session ----------
+
+async function startFreshSession() {
+  const keep = $('fs-keep').checked; const bundles = $('fs-bundles').checked; const audit = $('fs-audit').checked; const scan = $('fs-scan').checked;
+  const parts = ['all indexed events', 'temporary files'];
+  if (bundles) parts.push('imported bundles');
+  if (!keep) parts.push('all folder sources');
+  if (audit) parts.push('the activity record');
+  if (!window.confirm('Start a fresh session?\n\nThis deletes ' + parts.join(', ') + '.' + (scan ? ' The newest files are then analysed again.' : '') + '\nOriginal log files are not touched.')) return;
+  try {
+    await api('/api/maintenance/fresh-session', { method: 'POST', body: JSON.stringify({ confirm: 'FRESH', keepFolderSources: keep, deleteBundles: bundles, clearActivityRecord: audit, scanAgain: scan }) });
+  } catch (e) { notify(/** @type {Error} */ (e).message); return; }
+  // Clear what this page holds in memory as well.
+  stopLive();
+  for (const id of ['lv-out', 'search-summary']) $(id).replaceChildren();
+  $('results').querySelector('tbody').replaceChildren();
+  $('more').classList.add('hidden'); $('export').classList.add('hidden');
+  $('chooser').classList.add('hidden'); chooser = null; nextCursor = null;
+  notify('Fresh session started. Cleaning up' + (scan ? ' and analysing the newest files again…' : '…'), true);
+  for (let i = 0; i < 600; i++) {
+    await new Promise((res) => setTimeout(res, 500));
+    const st = await api('/api/scan/status').catch(() => null);
+    if (st && st.state === 'idle' && st.queued === 0) { notify(st.lastOutcome || 'Fresh session ready.', true); break; }
+  }
+  showTab('overview');
+}
+
 // ---------- File chooser (at most 5 days of files per folder) ----------
 
 /** @type {{id: number, maxDays: number, files: any[]} | null} */
@@ -779,7 +806,10 @@ async function loadMaintenance() {
     about.append(el('li', '', `Version ${session.version}, ${session.mode === 'server' ? 'central mode (identity from the access proxy)' : 'local mode (this computer only)'}.`));
     about.append(el('li', '', 'Signed in as ' + session.identity + (isAdmin() ? ' (administrator).' : ' (viewer).')));
     if (session.sourceRoots.length) about.append(el('li', '', 'Folder sources must be inside: ' + session.sourceRoots.join(', ')));
-    about.append(el('li', '', session.scanIntervalMinutes ? `Automatic scan every ${session.scanIntervalMinutes} minutes.` : 'Automatic scans are off; scan from the Sources page.'));
+    about.append(el('li', '', session.liveIntervalSeconds
+      ? `New lines in chosen files are indexed automatically (checked every ${session.liveIntervalSeconds} seconds).`
+      : 'Automatic indexing of new lines is off; scan from the Sources page.'));
+    if (session.scanIntervalMinutes) about.append(el('li', '', `Full scan of all sources every ${session.scanIntervalMinutes} minutes.`));
   }
   about.append(el('li', '', 'Data folder: ' + m.dataDirectory));
   about.append(el('li', '', 'No telemetry, no online services and no AI: logs and results stay in the data folder.'));
@@ -846,11 +876,7 @@ async function start() {
   });
   $('imp-form').addEventListener('submit', (/** @type {Event} */ ev) => { ev.preventDefault(); upload(); });
   $('m-clean').addEventListener('click', () => api('/api/maintenance/clean-temp', { method: 'POST', body: '{}' }).then((r) => { notify(r.remaining ? `${r.remaining} item(s) could not be removed.` : 'Temporary files deleted.', true); loadMaintenance(); }).catch((e) => notify(e.message)));
-  $('m-purge').addEventListener('click', async () => {
-    const typed = window.prompt('This deletes every indexed event (source settings are kept, original logs are not touched). Type PURGE to confirm.');
-    if (typed !== 'PURGE') return;
-    try { await api('/api/maintenance/purge-index', { method: 'POST', body: JSON.stringify({ confirm: 'PURGE' }) }); notify('Purge queued.', true); pollScan(); } catch (e) { notify(/** @type {Error} */ (e).message); }
-  });
+  $('fs-start').addEventListener('click', startFreshSession);
 
   try {
     session = await api('/api/session');

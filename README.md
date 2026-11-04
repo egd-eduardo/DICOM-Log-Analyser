@@ -300,6 +300,11 @@ index; that is not implemented in this version.
   ```bash
   docker compose start analyser
   ```
+* **Fresh session (on demand).** **Maintenance > Fresh session** clears everything the analyser has collected: all
+  indexed events (the database is compacted, so removed content does not remain in its free space or write-ahead log),
+  temporary files, imported bundles (optional, on by default) and the analyser's in-memory state, then analyses the
+  newest 5 days of each folder again. Folder sources keep their paths and time zones (optional); the activity record is
+  kept unless you choose to clear it. Original log files are never touched.
 * **Retention.** Nothing expires automatically. Apply your retention policy with the deletion controls: delete a
   bundle or source (**Sources** / **Import bundle**), or delete the whole index (**Maintenance**). Deleting compacts the
   database. Remember that backups and CSV exports keep their own copies.

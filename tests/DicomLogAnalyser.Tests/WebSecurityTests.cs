@@ -333,6 +333,7 @@ public sealed class ServerModeTests : IAsyncLifetime
     [InlineData("GET", "/api/maintenance")]
     [InlineData("POST", "/api/maintenance/clean-temp")]
     [InlineData("POST", "/api/maintenance/purge-index")]
+    [InlineData("POST", "/api/maintenance/fresh-session")]
     public async Task Viewers_cannot_change_export_or_administer(string method, string path)
     {
         await Start("127.0.0.1/32");

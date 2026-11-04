@@ -90,6 +90,10 @@ highlight colour and theme are stored in `localStorage` (preferences only, no da
 * **Live view:** `/api/tail` opens only files chosen for analysis in that source (or a bundle's files), after resolving
   the path inside the source folder and refusing links; any other name returns 403. Files are opened read-only with
   sharing. Viewers may use it, as it shows the same files their searches cover.
+* **Fresh session:** administrator-only, explicitly confirmed; runs in the background queue (never during a scan),
+  deletes events, file state, optional bundles and sources, temporary files and in-memory caches, then compacts the
+  database (VACUUM, WAL truncated). A test confirms that an indexed identifier no longer occurs in the raw bytes of the
+  database or its WAL afterwards. Deleted file blocks on disk are protected by the operating system's disk encryption.
 * **CSV export:** quoted cells, newlines flattened, formula prefixes (`= + - @ tab`) neutralised.
 * **JSON:** unknown properties rejected, depth limited, enums as strings; request bodies limited to 1 MB except bundle
   upload.

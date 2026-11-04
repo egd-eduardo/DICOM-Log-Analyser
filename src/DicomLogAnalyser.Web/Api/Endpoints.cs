@@ -24,6 +24,8 @@ public sealed record ConfirmInput(string? Confirm);
 
 public sealed record SelectionInput(IReadOnlyList<string>? Files);
 
+public sealed record FreshSessionInput(string? Confirm, bool? KeepFolderSources, bool? DeleteBundles, bool? ClearActivityRecord, bool? ScanAgain);
+
 public static class Endpoints
 {
     public const int ExportMaxRows = 100_000;
@@ -54,6 +56,7 @@ public static class Endpoints
                 sourceRoots = validator.AllowedRoots,
                 maxUploadMb = rt.Options.MaxUploadBytes / (1024 * 1024),
                 scanIntervalMinutes = rt.Options.ScanIntervalMinutes,
+                liveIntervalSeconds = rt.Options.LiveIntervalSeconds,
                 formats = FormatRegistry.All.Select(f => new { id = f.Id, name = f.DisplayName }),
             });
         });
@@ -341,6 +344,17 @@ public static class Endpoints
             var remaining = paths.CleanTemp();
             audit.Write(SecurityMiddleware.CurrentSession(ctx).Identity, "temp_cleaned", new Dictionary<string, object?> { ["remaining"] = remaining });
             return Results.Json(new { remaining });
+        });
+
+        admin.MapPost("/maintenance/fresh-session", (HttpContext ctx, FreshSessionInput input, ScanCoordinator coordinator, ImportTracker tracker) =>
+        {
+            if (input.Confirm != "FRESH") return Bad("Confirm the fresh session.");
+            if (tracker.Active > 0) return Results.Conflict(new { error = "busy", message = "An import is in progress. Start the fresh session when it has finished." });
+            coordinator.CancelCurrent();
+            var options = new FreshSessionOptions(input.KeepFolderSources ?? true, input.DeleteBundles ?? true, input.ClearActivityRecord ?? false, input.ScanAgain ?? true);
+            return coordinator.EnqueueFreshSession(SecurityMiddleware.CurrentSession(ctx).Identity, options)
+                ? Results.Accepted(value: new { queued = true })
+                : Results.Json(new { error = "busy" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         });
 
         admin.MapPost("/maintenance/purge-index", (HttpContext ctx, ConfirmInput input, ScanCoordinator coordinator) =>

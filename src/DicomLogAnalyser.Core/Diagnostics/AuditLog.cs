@@ -28,6 +28,13 @@ public sealed class AuditLog(IndexDatabase db, TimeProvider time)
         cmd.ExecuteNonQuery();
     }
 
+    /// <summary>Deletes the activity record (only when the user explicitly asks for it in a fresh session).</summary>
+    public void Clear()
+    {
+        using var c = db.Open();
+        IndexDatabase.Exec(c, "DELETE FROM audit;");
+    }
+
     public IReadOnlyList<AuditEntry> Recent(int limit)
     {
         using var c = db.Open();

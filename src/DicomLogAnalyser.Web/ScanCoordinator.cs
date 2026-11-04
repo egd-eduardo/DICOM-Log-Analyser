@@ -7,6 +7,9 @@ using DicomLogAnalyser.Core.Sources;
 
 namespace DicomLogAnalyser.Web;
 
+/// <summary>What a fresh session clears, besides the index, temporary files and in-memory state.</summary>
+public sealed record FreshSessionOptions(bool KeepFolderSources = true, bool DeleteBundles = true, bool ClearActivityRecord = false, bool ScanAgain = true);
+
 public sealed record ScanStatus(string State, string? Operation, string? SourceLabel, int FilesDone, int FilesTotal, long BytesRead, long EventsAdded,
     string? StartedUtc, string? FinishedUtc, string? LastOutcome, int Queued);
 
@@ -15,7 +18,7 @@ public sealed record ScanStatus(string State, string? Operation, string? SourceL
 /// Optional periodic scans are configured with DLA_SCAN_INTERVAL_MINUTES.
 /// </summary>
 public sealed class ScanCoordinator(
-    Ingestor ingestor, SourceRepository sources, IndexDatabase db, BundleImporter bundles, AuditLog audit, AppOptions options, TimeProvider time,
+    Ingestor ingestor, SourceRepository sources, IndexDatabase db, BundleImporter bundles, AuditLog audit, AppOptions options, Core.Storage.AppPaths paths, TimeProvider time,
     ILogger<ScanCoordinator> logger) : BackgroundService
 {
     private readonly Channel<WorkItem> _queue = Channel.CreateBounded<WorkItem>(new BoundedChannelOptions(64) { FullMode = BoundedChannelFullMode.DropWrite });
@@ -36,6 +39,13 @@ public sealed class ScanCoordinator(
     private sealed record PurgeWork(string Actor) : WorkItem(Actor);
 
     private sealed record ReindexWork(string Actor, long SourceId) : WorkItem(Actor);
+
+    private sealed record FreshSessionWork(string Actor, FreshSessionOptions Options) : WorkItem(Actor);
+
+    private long _generation;
+
+    /// <summary>Changes at every fresh session; in-memory caches elsewhere (live watcher) reset when it changes.</summary>
+    public long Generation => Interlocked.Read(ref _generation);
 
     /// <summary>Test seam: replaces the ingestor call for one source.</summary>
     internal Func<SourceDefinition, IProgress<ScanProgress>, CancellationToken, ScanSummary>? ScanOverride { get; set; }
@@ -62,6 +72,9 @@ public sealed class ScanCoordinator(
     public bool EnqueueDelete(string actor, long sourceId) => Enqueue(new DeleteWork(actor, sourceId));
 
     public bool EnqueuePurge(string actor) => Enqueue(new PurgeWork(actor));
+
+    /// <summary>Queues a fresh session: everything indexed or imported is cleared, then (optionally) analysed again.</summary>
+    public bool EnqueueFreshSession(string actor, FreshSessionOptions options) => Enqueue(new FreshSessionWork(actor, options));
 
     /// <summary>Clears a source's index and rescans it, after any running work (never concurrently with a scan).</summary>
     public bool EnqueueReindex(string actor, long sourceId) => Enqueue(new ReindexWork(actor, sourceId));
@@ -156,6 +169,9 @@ public sealed class ScanCoordinator(
                 if (target.Enabled) RunScan(new ScanWork(reindex.Actor, [target.Id]), ct);
                 else Finish("The source's index was cleared; enable it and scan to rebuild it.");
                 break;
+            case FreshSessionWork fresh:
+                RunFreshSession(fresh, ct);
+                break;
             case PurgeWork purge:
                 Begin("Purging index");
                 db.PurgeEvents();
@@ -200,6 +216,57 @@ public sealed class ScanCoordinator(
         }
 
         Finish(list.Count == 0 ? "No enabled sources to scan." : string.Join(" · ", outcomes));
+    }
+
+    private void RunFreshSession(FreshSessionWork work, CancellationToken ct)
+    {
+        Begin("Starting a fresh session");
+        var o = work.Options;
+        var all = sources.List();
+        var bundlesRemoved = 0;
+        var foldersRemoved = 0;
+        foreach (var s in all)
+        {
+            var isBundle = s.Kind == SourceKinds.Bundle;
+            if ((isBundle && !o.DeleteBundles) || (!isBundle && o.KeepFolderSources)) continue;
+            sources.Delete(s.Id);
+            if (isBundle)
+            {
+                bundles.Delete(s.Path);
+                bundlesRemoved++;
+            }
+            else
+            {
+                foldersRemoved++;
+            }
+        }
+
+        // Events, file state and the full-text index are deleted and the database is compacted (VACUUM), so removed
+        // content does not remain in free pages or the write-ahead log.
+        db.PurgeEvents();
+        sources.ResetSelectionsAndScanState();
+        var tempLeft = paths.CleanTemp();
+        if (o.ClearActivityRecord) audit.Clear();
+        Interlocked.Increment(ref _generation);
+        _pendingLive.Clear();
+        audit.Write(work.Actor, "fresh_session", new Dictionary<string, object?>
+        {
+            ["bundlesRemoved"] = bundlesRemoved,
+            ["foldersRemoved"] = foldersRemoved,
+            ["activityCleared"] = o.ClearActivityRecord,
+            ["tempLeft"] = tempLeft,
+        });
+        lock (_lock) _status = _status with { LastOutcome = null };
+        if (o.ScanAgain && sources.List().Any(s => s.Enabled))
+        {
+            RunScan(new ScanWork(work.Actor, null), ct);
+            lock (_lock) _status = _status with { LastOutcome = "Fresh session started; the newest 5 days of each folder were analysed again. " + _status.LastOutcome };
+        }
+        else
+        {
+            Finish("Fresh session started: the index" + (bundlesRemoved > 0 ? ", imported bundles" : "") + " and temporary files were cleared." +
+                   (o.ScanAgain ? "" : " Scan when you are ready."));
+        }
     }
 
     /// <summary>Live update: no audit entry, no change to the last manual outcome, diagnostics only when lines were added.</summary>

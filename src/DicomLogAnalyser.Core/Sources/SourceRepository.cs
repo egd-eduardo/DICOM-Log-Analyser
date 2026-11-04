@@ -138,6 +138,15 @@ public sealed class SourceRepository(IndexDatabase db, TimeProvider time)
         cmd.ExecuteNonQuery();
     }
 
+    /// <summary>Forgets every folder's file choice and scan state, so the next scan chooses the newest days again.</summary>
+    public void ResetSelectionsAndScanState()
+    {
+        using var c = db.Open();
+        IndexDatabase.Exec(c, "UPDATE sources SET selected_files=NULL, selection_utc=NULL, selection_seen=NULL, unselected_files=0, new_files=0, " +
+            "last_scan_utc=NULL, last_scan_status=NULL, last_scan_message=NULL;");
+        db.MarkChanged();
+    }
+
     public void RecordFileCounts(long id, int unselected, int newFiles)
     {
         using var c = db.Open();

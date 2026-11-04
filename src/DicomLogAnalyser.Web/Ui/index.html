@@ -154,9 +154,17 @@
     <section id="tab-maintenance" class="panel hidden">
       <h1>Maintenance</h1>
       <div id="m-info" class="cards"></div>
+      <section class="fresh" aria-labelledby="fs-title">
+        <h2 id="fs-title">Fresh session</h2>
+        <p class="small">Clears everything the analyser has collected (indexed events, temporary files and its memory) and analyses the newest files again. Original log files are never touched.</p>
+        <label class="check"><input type="checkbox" id="fs-keep" checked> Keep folder sources (paths and time zones); their file choice resets to the newest 5 days</label>
+        <label class="check"><input type="checkbox" id="fs-bundles" checked> Delete imported bundles (their copied files are removed from disk)</label>
+        <label class="check"><input type="checkbox" id="fs-audit"> Also clear the activity record (contains no patient data)</label>
+        <label class="check"><input type="checkbox" id="fs-scan" checked> Scan again straight away</label>
+        <div class="row"><button id="fs-start" type="button" class="danger">Start fresh session…</button></div>
+      </section>
       <div class="row">
-        <button id="m-clean" class="ghost">Delete temporary files</button>
-        <button id="m-purge" class="danger">Delete the whole index…</button>
+        <button id="m-clean" class="ghost">Delete temporary files only</button>
       </div>
       <div id="m-result"></div>
       <h2>About this installation</h2>
