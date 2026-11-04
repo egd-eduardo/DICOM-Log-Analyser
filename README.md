@@ -98,7 +98,9 @@ reports whether the folder exists, is readable, how many files it contains, whet
 and whether it is a mapped drive or a read-only mount. Sources can be relabelled, enabled/disabled, rescanned and
 deleted; deleting a folder source removes only its index, never the original files.
 
-**Set the time zone** for B3DWEB Gateway sources (for example `Europe/Lisbon`): their timestamps have no UTC offset.
+**Check the time zone** for B3DWEB Gateway sources: their timestamps have no UTC offset. For a new source or bundle
+the field is pre-filled with the time zone of the computer running the browser (for example `Europe/Lisbon`); change
+it when the logs were written elsewhere. Editing a source shows its saved time zone.
 Without it, their times are shown as written and flagged as "local, zone unknown". DICOM Router timestamps include
 their offset and are always placed correctly on the UTC timeline. Changing the time zone re-indexes the source.
 

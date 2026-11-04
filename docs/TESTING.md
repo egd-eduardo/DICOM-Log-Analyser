@@ -39,6 +39,7 @@ These checks were actually run; nothing below is assumed.
 | Compose file | `docker compose config` valid; proxy published on 127.0.0.1 only; analyser on an internal network without a published port |
 | Volume test | See [ARCHITECTURE.md](ARCHITECTURE.md#measured-performance-synthetic-data-this-build-environment): 300 MB, 1.78 million events in 105 s; identifier searches under 10 ms |
 | Roles (central mode, Chromium over HTTPS through a test TLS proxy that injects the identity) | Viewer: only Overview and Search tabs, search with highlighting works, no Export button; administrator: all tabs and Export. All 11 administrator-only endpoints return 403 `admin_required` for a viewer before any request body is read, and the refusal is recorded. Container refuses to start without `DLA_ADMIN_USERS`; in the container a viewer gets 403 and an administrator 200 on maintenance |
+| Time-zone pre-fill (Chromium with the browser in Europe/Lisbon and in America/New_York) | New-source and bundle fields pre-filled with the browser's zone and saved with it; a changed value (Asia/Tokyo) was kept; editing showed the saved value; the add form was pre-filled again after saving |
 | Concurrency stress | Three rounds of scans (30 MB plus fixtures) while six threads searched, read the overview and sources, and new sources were added: 0 errors |
 
 ### Intermittent scan failure (investigated 2026-11-04)

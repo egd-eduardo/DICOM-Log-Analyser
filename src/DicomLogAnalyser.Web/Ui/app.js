@@ -162,6 +162,23 @@ function showSignIn() {
 /** Administrators configure, import, export and delete; viewers search and read. */
 function isAdmin() { return session?.role === 'admin'; }
 
+/** IANA time zone of this computer (from the browser), or '' when it cannot be determined. */
+function localTimeZone() {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || '';
+    return /^[A-Za-z_]+(\/[A-Za-z0-9_+\-]+)*$/.test(tz) && tz !== 'Etc/Unknown' ? tz : '';
+  } catch { return ''; }
+}
+
+/** Pre-fills a time-zone field for new sources and bundles; the value can always be changed. @param {string} inputId @param {string} helpId */
+function prefillTimeZone(inputId, helpId) {
+  const tz = localTimeZone();
+  if (tz && !$(inputId).value) $(inputId).value = tz;
+  $(helpId).textContent = tz
+    ? `Pre-filled with this computer's time zone (${tz}). Change it if the logs were written in another time zone. DICOM Router logs include their own offset and ignore this setting.`
+    : 'Enter the time zone in which the logs were written, for example Europe/Lisbon.';
+}
+
 // ---------- Formatting ----------
 
 /** @param {number} n */
@@ -489,6 +506,7 @@ function editSource(s) {
   $('s-tz').value = s.timeZone || ''; $('s-format').value = s.formatHint; $('s-patterns').value = s.includePatterns;
   $('s-recursive').checked = s.recursive; $('s-enabled').checked = s.enabled;
   $('src-form-title').textContent = 'Edit source'; $('s-save').textContent = 'Save'; $('s-cancel').classList.remove('hidden');
+  $('s-tz-help').textContent = 'Saved time zone of this source. Changing it re-indexes the source.';
   $('s-result').replaceChildren();
   $('src-form').scrollIntoView({ behavior: 'smooth' });
 }
@@ -496,6 +514,7 @@ function editSource(s) {
 function resetSourceForm() {
   $('src-form').reset(); $('s-id').value = ''; $('s-path').disabled = false;
   $('src-form-title').textContent = 'Add a folder source'; $('s-save').textContent = 'Add source and scan'; $('s-cancel').classList.add('hidden');
+  prefillTimeZone('s-tz', 's-tz-help');
 }
 
 /** @param {any} v */
@@ -563,7 +582,7 @@ function upload() {
     if (xhr.status >= 200 && xhr.status < 300 && body) {
       box.append(el('p', 'ok-text', `Imported ${body.filesExtracted} file(s) (${bytes(body.bytesExtracted)}). Indexing has started.`));
       if (body.skipped.length) box.append(el('p', 'warn-text small', `${body.skipped.length} file(s) were skipped because they are not log files: ` + body.skipped.slice(0, 10).join(', ') + (body.skipped.length > 10 ? ', …' : '')));
-      $('imp-form').reset(); loadSources(); pollScan();
+      $('imp-form').reset(); prefillTimeZone('i-tz', 'i-tz-help'); loadSources(); pollScan();
     } else {
       box.append(el('p', 'err-text', (body && (body.message || body.error)) || ('Upload failed (' + xhr.status + ').')));
     }
@@ -649,6 +668,8 @@ async function start() {
     ? 'Container path inside ' + session.sourceRoots.join(' or ') + ' (a read-only volume in compose.yaml). Windows drive letters and UNC paths cannot be used directly here.'
     : session.platform === 'windows' ? 'Examples: C:\\3dnet\\DicomRouter\\logs, Z:\\3dnet\\audits\\Gateway\\0 or \\\\server\\share\\logs'
       : 'Examples: /Volumes/ClinicalLogs/Gateway/US or /var/log/dicomrouter';
+  prefillTimeZone('s-tz', 's-tz-help');
+  prefillTimeZone('i-tz', 'i-tz-help');
   $('i-limit').textContent = `Maximum upload size: ${session.maxUploadMb} MB. Archives are checked for unsafe paths, links and decompression bombs before anything is kept.`;
   if (new URLSearchParams(location.search).has('expired')) notify('That sign-in link was already used or has expired. Press O in the analyser window for a new one.');
   showTab('overview');

@@ -90,6 +90,7 @@
         <label>Folder path <input id="s-path" required maxlength="1024" placeholder=""></label>
         <p id="s-path-help" class="muted small"></p>
         <label>Time zone of the logs <input id="s-tz" list="tz-list" maxlength="64" placeholder="e.g. Europe/Lisbon (needed for B3DWEB Gateway logs)"></label>
+        <p id="s-tz-help" class="muted small"></p>
         <datalist id="tz-list"></datalist>
         <label>Log format <select id="s-format"><option value="auto">Detect automatically</option></select></label>
         <label>File name patterns <input id="s-patterns" value="*" maxlength="400" placeholder="* or *.log;*.txt"></label>
@@ -110,6 +111,7 @@
       <form id="imp-form" class="form" autocomplete="off">
         <label>Label <input id="i-label" required maxlength="100" placeholder="e.g. Router site B, 2026-11-03"></label>
         <label>Time zone of the logs <input id="i-tz" list="tz-list" maxlength="64" placeholder="e.g. Europe/Lisbon"></label>
+        <p id="i-tz-help" class="muted small"></p>
         <label>File (.zip, .gz, .log or .txt) <input id="i-file" type="file" required accept=".zip,.gz,.log,.txt"></label>
         <p id="i-limit" class="muted small"></p>
         <div class="row"><button type="submit" class="primary">Upload and index</button></div>
