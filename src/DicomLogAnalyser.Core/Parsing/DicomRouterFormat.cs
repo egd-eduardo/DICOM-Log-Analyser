@@ -58,7 +58,10 @@ public sealed partial class DicomRouterFormat : ILogFormat
         }
 
         var component = m.Groups["comp"].Success ? m.Groups["comp"].Value : null;
-        return new RecordHeader(level.Value, levelText, timestamp, offset, CategoryOf(component), component, m.Groups["msg"].Value);
+        var message = m.Groups["msg"].Value;
+        // Observed in real Router logs: an empty source context leaves "[FTL] : message".
+        if (component is null && message.StartsWith(':')) message = message[1..].TrimStart();
+        return new RecordHeader(level.Value, levelText, timestamp, offset, CategoryOf(component), component, message);
     }
 
     /// <summary>Short, human-friendly category: the last segment of the component, without generic arguments.</summary>

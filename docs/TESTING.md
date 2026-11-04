@@ -13,7 +13,7 @@ approved environment.
 | Locked restore | `dotnet restore --locked-mode` (lock files must match) |
 | Formatting and code style | `dotnet format --verify-no-changes` (`.editorconfig`) |
 | Build with analyzers | `dotnet build -c Release`, `AnalysisLevel=latest-recommended`, warnings as errors, NuGet Audit |
-| Unit and integration tests | xUnit, 118 tests (parsers, line reader, assembler, ingestion, rotation/truncation, search, query safety, bundle import attacks, path validation, configuration, HTTP security in both modes, end-to-end API, background queue failure isolation, viewer/administrator roles) |
+| Unit and integration tests | xUnit, 119 tests (parsers, line reader, assembler, ingestion, rotation/truncation, search, query safety, bundle import attacks, path validation, configuration, HTTP security in both modes, end-to-end API, background queue failure isolation, viewer/administrator roles) |
 | Dependency vulnerabilities | `dotnet list package --vulnerable --include-transitive`; `npm audit` for the UI type-check tool |
 | UI type check | TypeScript 7.0.2 `checkJs` over `Ui/app.js` |
 
@@ -28,7 +28,7 @@ These checks were actually run; nothing below is assumed.
 |---|---|
 | Secret/PHI scan | Passed (83 files). A planted file with a real-looking UID, a non-synthetic name, a public IP, a private-key header and a password was correctly rejected (5 findings). |
 | Locked restore, format, build | Passed, no warnings |
-| Tests | 118 passed, 0 failed |
+| Tests | 119 passed, 0 failed |
 | Vulnerable packages (NuGet, transitive) | None reported |
 | npm audit (TypeScript) | 0 vulnerabilities |
 | UI type check | Passed, after fixing seven type errors it found |
@@ -72,6 +72,25 @@ no failures; the rebuilt container re-indexed a source after a time-zone change 
 **Remaining.** If the original trigger recurs, it now affects only the one source, is visible in the interface, and
 the logged SQLite code identifies the cause.
 
+## Validation with real logs (2026-11-04)
+
+A real sample supplied by the owner (16 log files, 47 MB: one DICOM Router folder and two B3DWEB Gateway folders) was
+processed in an isolated working folder outside the repository and deleted afterwards. Only aggregate counts and
+masked line shapes were examined; nothing from the sample was committed. Results with the current build:
+
+| Check | Result |
+|---|---|
+| Recognition | 16 of 16 files recognised, 0 unreadable, 0 unrecognised, 0 unparsed lines |
+| Volume | 206 868 events (Router 57 746; Gateway 131 159 and 17 963), scanned in about 11 s |
+| Levels | Gateway `INF`, `WARNING`; Router `INF`, `WRN`, `ERR`, `FTL` (fatal): all mapped, no unknown level tokens |
+| Multi-line records | 35 461 continuation lines; none looks like a record header, so no format variant is hidden inside other records; largest record 25 lines; 6 499 records carry exception traces (11 in Gateway logs, grouped correctly) |
+| Time stamps | All Router entries carry `+00:00` (UTC). Gateway entries have no offset: **each Gateway source needs its time zone configured**; the coverage notes flag this until it is set |
+| Search | Five identifiers taken at random from the sample: 9 to 71 matches each, 4 to 67 ms; errors-only filter 48 ms |
+| Finding fixed | One Router line has an empty component (`[FTL] : message`); its message kept a leading colon. Fixed and covered by a synthetic test |
+
+The sample's Gateway and Router periods do not overlap, so the Gateway time zones could not be inferred from shared
+DICOM UIDs and must be confirmed by the owner.
+
 ## GitHub Actions (CI)
 
 | Run | Commit | Result |
@@ -85,4 +104,4 @@ the logged SQLite code identifies the cause.
 * Interactive use of the Windows and macOS packages by a person, and Windows SmartScreen / macOS Gatekeeper behaviour
   with unsigned binaries (CI starts the executables headless).
 * oauth2-proxy with a real identity provider (the image registry was not reachable from this environment).
-* Real B3DWEB Gateway and DICOM Router logs (only synthetic fixtures modelled on the described formats were used).
+* Real logs from every site and software version in use (one real sample has been validated, see above).

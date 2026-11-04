@@ -58,6 +58,16 @@ public class ParserTests
     }
 
     [Fact]
+    public void Router_line_with_empty_component_keeps_a_clean_message()
+    {
+        var h = new DicomRouterFormat().TryParseHeader("2026-10-27 00:00:06.059 +00:00 [FTL] : Host terminated unexpectedly")!;
+        Assert.Equal(EventLevel.Fatal, h.Level);
+        Assert.Null(h.Component);
+        Assert.Equal("(none)", h.Category);
+        Assert.Equal("Host terminated unexpectedly", h.Message);
+    }
+
+    [Fact]
     public void Router_negative_offset_is_applied()
     {
         var h = new DicomRouterFormat().TryParseHeader("2026-10-27 00:00:09.001 -05:30 [WRN] DicomRouter.X.Y: retry")!;
