@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>DicomLogAnalyser.Web</RootNamespace>
+    <AssemblyName>DicomLogAnalyser</AssemblyName>
+    <InvariantGlobalization>false</InvariantGlobalization>
+    <UseAppHost>true</UseAppHost>
+    <!-- Off on purpose: the analyzer pulls Microsoft.NET.ILLink.Tasks, whose version follows each machine's SDK patch
+         level and would make the lock file differ between developers and CI. -->
+    <EnableSingleFileAnalyzer>false</EnableSingleFileAnalyzer>
+  </PropertyGroup>
+
+  <!-- Portable single-file package when publishing for a runtime, e.g. dotnet publish -r win-x64 -->
+  <PropertyGroup Condition="'$(RuntimeIdentifier)' != '' and '$(ContainerBuild)' != 'true'">
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <PublishTrimmed>false</PublishTrimmed>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="Ui\**\*" LogicalName="ui/%(RecursiveDir)%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <Using Include="Microsoft.AspNetCore.Builder" />
+    <Using Include="Microsoft.AspNetCore.Hosting" />
+    <Using Include="Microsoft.AspNetCore.Http" />
+    <Using Include="Microsoft.AspNetCore.Routing" />
+    <Using Include="Microsoft.Extensions.DependencyInjection" />
+    <Using Include="Microsoft.Extensions.Hosting" />
+    <Using Include="Microsoft.Extensions.Logging" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DicomLogAnalyser.Core\DicomLogAnalyser.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DicomLogAnalyser.Tests" />
+  </ItemGroup>
+</Project>

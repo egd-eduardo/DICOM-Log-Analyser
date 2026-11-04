@@ -1,0 +1,345 @@
+using System.Globalization;
+using System.Reflection;
+using System.Text;
+using DicomLogAnalyser.Core.Bundles;
+using DicomLogAnalyser.Core.Diagnostics;
+using DicomLogAnalyser.Core.Indexing;
+using DicomLogAnalyser.Core.Model;
+using DicomLogAnalyser.Core.Parsing;
+using DicomLogAnalyser.Core.Sources;
+using DicomLogAnalyser.Core.Storage;
+using DicomLogAnalyser.Web.Security;
+using Microsoft.AspNetCore.Http.Features;
+
+namespace DicomLogAnalyser.Web.Api;
+
+public sealed record SourceInput(string? Label, string? Path, bool? Enabled, bool? Recursive, string? IncludePatterns, string? TimeZone, string? FormatHint, bool? ScanNow);
+
+public sealed record PathInput(string? Path);
+
+public sealed record ScanInput(IReadOnlyList<long>? SourceIds);
+
+public sealed record ConfirmInput(string? Confirm);
+
+public static class Endpoints
+{
+    public const int ExportMaxRows = 100_000;
+
+    public static string Version { get; } =
+        typeof(Endpoints).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.0.0";
+
+    public static void Map(WebApplication app)
+    {
+        ArgumentNullException.ThrowIfNull(app);
+        app.MapGet("/healthz", () => Results.Text("ok", "text/plain"));
+
+        var api = app.MapGroup("/api");
+        api.MapGet("/session", (HttpContext ctx, AppRuntime rt, PathValidator validator) =>
+        {
+            var s = SecurityMiddleware.CurrentSession(ctx);
+            return Results.Json(new
+            {
+                mode = rt.Options.Mode == AppMode.Server ? "server" : "local",
+                identity = s.Identity,
+                csrfToken = s.CsrfToken,
+                version = Version,
+                platform = OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "macos" : "linux",
+                sourceRoots = validator.AllowedRoots,
+                maxUploadMb = rt.Options.MaxUploadBytes / (1024 * 1024),
+                scanIntervalMinutes = rt.Options.ScanIntervalMinutes,
+                formats = FormatRegistry.All.Select(f => new { id = f.Id, name = f.DisplayName }),
+            });
+        });
+
+        api.MapGet("/overview", (OverviewService overview) => Results.Json(overview.Build()));
+
+        api.MapGet("/search", (HttpContext ctx, SearchService search) =>
+        {
+            var (request, error) = ParseSearch(ctx.Request.Query);
+            return error is not null ? Bad(error) : Results.Json(search.Search(request!));
+        });
+
+        api.MapGet("/events/{id:long}", (long id, SearchService search) => search.Get(id) is { } e ? Results.Json(e) : Results.NotFound(new { error = "not_found" }));
+
+        api.MapGet("/export.csv", async (HttpContext ctx, SearchService search, AuditLog audit) =>
+        {
+            var (request, error) = ParseSearch(ctx.Request.Query);
+            if (error is not null)
+            {
+                await Bad(error).ExecuteAsync(ctx).ConfigureAwait(false);
+                return;
+            }
+
+            ctx.Response.ContentType = "text/csv; charset=utf-8";
+            var name = "dicom-log-events-" + DateTime.UtcNow.ToString("yyyyMMdd-HHmmss", CultureInfo.InvariantCulture) + ".csv";
+            ctx.Response.Headers.ContentDisposition = "attachment; filename=\"" + name + "\"";
+            var writer = new StreamWriter(ctx.Response.Body, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true), 65536);
+            await using (writer.ConfigureAwait(false))
+            {
+                await writer.WriteLineAsync("time,time_basis,level,source,file,line,category,component,message").ConfigureAwait(false);
+                var rows = 0;
+                foreach (var e in search.Export(request!, ExportMaxRows))
+                {
+                    var time = e.Timestamp is { } ms ? DateTimeOffset.FromUnixTimeMilliseconds(ms).UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss.fff", CultureInfo.InvariantCulture) : "";
+                    await writer.WriteLineAsync(string.Join(',', Csv(time), Csv(e.Timestamp is null ? "unknown" : e.UtcKnown ? "UTC" : "source local time (zone unknown)"),
+                        Csv(e.LevelText.Length > 0 ? e.LevelText : e.Level.ToString()), Csv(e.SourceLabel), Csv(e.File), e.LineStart.ToString(CultureInfo.InvariantCulture),
+                        Csv(e.Category), Csv(e.Component ?? ""), Csv(e.Message))).ConfigureAwait(false);
+                    rows++;
+                }
+
+                audit.Write(SecurityMiddleware.CurrentSession(ctx).Identity, "export", new Dictionary<string, object?> { ["rows"] = rows });
+            }
+        });
+
+        api.MapGet("/sources", (SourceRepository repo) => Results.Json(repo.List()));
+
+        api.MapPost("/sources/validate", (PathInput input, PathValidator validator) => Results.Json(validator.ValidateFolder(input.Path)));
+
+        api.MapPost("/sources", (HttpContext ctx, SourceInput input, SourceRepository repo, PathValidator validator, AuditLog audit, ScanCoordinator coordinator) =>
+        {
+            var errors = CheckSettings(input);
+            if (errors.Count > 0) return Results.BadRequest(new { error = "invalid", messages = errors });
+            var validation = validator.ValidateFolder(input.Path);
+            if (!validation.Ok) return Results.BadRequest(new { error = "invalid", messages = validation.Errors, validation });
+            var id = repo.Add(new SourceDefinition
+            {
+                Label = input.Label!.Trim(),
+                Kind = SourceKinds.Folder,
+                Path = validation.NormalisedPath!,
+                Enabled = input.Enabled ?? true,
+                Recursive = input.Recursive ?? true,
+                IncludePatterns = string.IsNullOrWhiteSpace(input.IncludePatterns) ? "*" : input.IncludePatterns.Trim(),
+                TimeZone = string.IsNullOrWhiteSpace(input.TimeZone) ? null : input.TimeZone.Trim(),
+                FormatHint = string.IsNullOrWhiteSpace(input.FormatHint) ? FormatRegistry.Auto : input.FormatHint,
+            });
+            var actor = SecurityMiddleware.CurrentSession(ctx).Identity;
+            audit.Write(actor, "source_added", new Dictionary<string, object?> { ["sourceId"] = id });
+            if (input.ScanNow == true) coordinator.EnqueueScan(actor, [id]);
+            return Results.Json(new { id, validation });
+        });
+
+        api.MapPut("/sources/{id:long}", (HttpContext ctx, long id, SourceInput input, SourceRepository repo, AuditLog audit, ScanCoordinator coordinator) =>
+        {
+            var existing = repo.Get(id);
+            if (existing is null) return Results.NotFound(new { error = "not_found" });
+            var errors = CheckSettings(input with { Path = existing.Path });
+            if (errors.Count > 0) return Results.BadRequest(new { error = "invalid", messages = errors });
+            var updated = existing with
+            {
+                Label = input.Label!.Trim(),
+                Enabled = input.Enabled ?? existing.Enabled,
+                Recursive = input.Recursive ?? existing.Recursive,
+                IncludePatterns = string.IsNullOrWhiteSpace(input.IncludePatterns) ? existing.IncludePatterns : input.IncludePatterns.Trim(),
+                TimeZone = string.IsNullOrWhiteSpace(input.TimeZone) ? null : input.TimeZone.Trim(),
+                FormatHint = string.IsNullOrWhiteSpace(input.FormatHint) ? existing.FormatHint : input.FormatHint,
+            };
+            var needsReindex = updated.TimeZone != existing.TimeZone || updated.FormatHint != existing.FormatHint;
+            if (needsReindex && coordinator.Status.State != "idle")
+                return Results.Conflict(new { error = "busy", message = "A scan is running. Wait until it finishes, then save again." });
+            repo.Update(updated);
+            if (needsReindex) repo.ResetIndex(id);
+            var actor = SecurityMiddleware.CurrentSession(ctx).Identity;
+            audit.Write(actor, "source_updated", new Dictionary<string, object?> { ["sourceId"] = id, ["reindex"] = needsReindex });
+            if (needsReindex && updated.Enabled) coordinator.EnqueueScan(actor, [id]);
+            return Results.Json(new { id, reindexed = needsReindex });
+        });
+
+        api.MapDelete("/sources/{id:long}", (HttpContext ctx, long id, SourceRepository repo, ScanCoordinator coordinator) =>
+        {
+            if (repo.Get(id) is null) return Results.NotFound(new { error = "not_found" });
+            coordinator.CancelCurrent();
+            return coordinator.EnqueueDelete(SecurityMiddleware.CurrentSession(ctx).Identity, id)
+                ? Results.Accepted(value: new { queued = true })
+                : Results.Json(new { error = "busy" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+        });
+
+        api.MapPost("/scan", (HttpContext ctx, ScanInput input, ScanCoordinator coordinator) =>
+            coordinator.EnqueueScan(SecurityMiddleware.CurrentSession(ctx).Identity, input.SourceIds is { Count: > 0 } ids ? ids : null)
+                ? Results.Accepted(value: new { queued = true })
+                : Results.Json(new { error = "busy" }, statusCode: StatusCodes.Status503ServiceUnavailable));
+
+        api.MapPost("/scan/cancel", (ScanCoordinator coordinator) =>
+        {
+            coordinator.CancelCurrent();
+            return Results.Json(new { cancelled = true });
+        });
+
+        api.MapGet("/scan/status", (ScanCoordinator coordinator) => Results.Json(coordinator.Status));
+
+        api.MapPost("/bundles", async (HttpContext ctx, BundleImporter importer, SourceRepository repo, AuditLog audit, ScanCoordinator coordinator, ImportTracker tracker) =>
+        {
+            var q = ctx.Request.Query;
+            var label = q["label"].ToString().Trim();
+            var tz = q["timeZone"].ToString().Trim();
+            var name = q["name"].ToString();
+            var labelError = PathValidator.CheckLabel(label) ?? PathValidator.CheckTimeZone(tz.Length == 0 ? null : tz);
+            if (labelError is not null) return Bad(labelError);
+            var limit = importer.Limits.MaxUploadBytes;
+            if (ctx.Request.ContentLength is { } len && len > limit)
+                return Results.Json(new { error = "too_large", message = $"The upload exceeds the limit of {limit / (1024 * 1024)} MB." }, statusCode: StatusCodes.Status413PayloadTooLarge);
+            var sizeFeature = ctx.Features.Get<IHttpMaxRequestBodySizeFeature>();
+            if (sizeFeature is { IsReadOnly: false }) sizeFeature.MaxRequestBodySize = limit;
+
+            BundleResult result;
+            using (tracker.Begin())
+            {
+                result = await importer.ImportAsync(ctx.Request.Body, name, ctx.RequestAborted).ConfigureAwait(false);
+            }
+
+            var id = repo.Add(new SourceDefinition
+            {
+                Label = label,
+                Kind = SourceKinds.Bundle,
+                Path = result.FilesDirectory,
+                Recursive = true,
+                IncludePatterns = "*",
+                TimeZone = tz.Length == 0 ? null : tz,
+                BundleSha256 = result.Sha256,
+                BundleBytes = result.UploadBytes,
+            });
+            var actor = SecurityMiddleware.CurrentSession(ctx).Identity;
+            audit.Write(actor, "bundle_imported", new Dictionary<string, object?>
+            {
+                ["sourceId"] = id,
+                ["bytes"] = result.UploadBytes,
+                ["files"] = result.FilesExtracted,
+                ["sha256"] = result.Sha256,
+                ["skipped"] = result.Skipped.Count,
+            });
+            coordinator.EnqueueScan(actor, [id]);
+            return Results.Json(new { id, result.Sha256, result.UploadBytes, result.FilesExtracted, result.BytesExtracted, result.Skipped });
+        });
+
+        api.MapGet("/maintenance", (AppPaths paths, AuditLog audit, AppRuntime rt) => Results.Json(new
+        {
+            dataDirectory = rt.Options.Mode == AppMode.Local ? paths.Root : "(container volume)",
+            databaseBytes = SizeOf(paths.DatabaseFile) + SizeOf(paths.DatabaseFile + "-wal") + SizeOf(paths.DatabaseFile + "-shm"),
+            bundlesBytes = DirectorySize(paths.BundlesDirectory),
+            tempEntries = Directory.Exists(paths.TempDirectory) ? Directory.EnumerateFileSystemEntries(paths.TempDirectory).Count() : 0,
+            tempBytes = DirectorySize(paths.TempDirectory),
+            audit = audit.Recent(200),
+        }));
+
+        api.MapPost("/maintenance/clean-temp", (HttpContext ctx, AppPaths paths, AuditLog audit, ImportTracker tracker) =>
+        {
+            if (tracker.Active > 0) return Results.Conflict(new { error = "busy", message = "An import is in progress. Try again when it has finished." });
+            var remaining = paths.CleanTemp();
+            audit.Write(SecurityMiddleware.CurrentSession(ctx).Identity, "temp_cleaned", new Dictionary<string, object?> { ["remaining"] = remaining });
+            return Results.Json(new { remaining });
+        });
+
+        api.MapPost("/maintenance/purge-index", (HttpContext ctx, ConfirmInput input, ScanCoordinator coordinator) =>
+        {
+            if (input.Confirm != "PURGE") return Bad("Type PURGE to confirm.");
+            coordinator.CancelCurrent();
+            return coordinator.EnqueuePurge(SecurityMiddleware.CurrentSession(ctx).Identity)
+                ? Results.Accepted(value: new { queued = true })
+                : Results.Json(new { error = "busy" }, statusCode: StatusCodes.Status503ServiceUnavailable);
+        });
+    }
+
+    internal static List<string> CheckSettings(SourceInput input)
+    {
+        var errors = new List<string>();
+        void Add(string? e)
+        {
+            if (e is not null) errors.Add(e);
+        }
+
+        Add(PathValidator.CheckLabel(input.Label));
+        Add(string.IsNullOrWhiteSpace(input.IncludePatterns) ? null : PathValidator.CheckPatterns(input.IncludePatterns));
+        Add(PathValidator.CheckTimeZone(string.IsNullOrWhiteSpace(input.TimeZone) ? null : input.TimeZone.Trim()));
+        Add(PathValidator.CheckFormat(string.IsNullOrWhiteSpace(input.FormatHint) ? null : input.FormatHint));
+        return errors;
+    }
+
+    internal static (SearchRequest? Request, string? Error) ParseSearch(IQueryCollection q)
+    {
+        EventLevel? level = null;
+        var levelText = q["minLevel"].ToString();
+        if (levelText.Length > 0)
+        {
+            if (!Enum.TryParse<EventLevel>(levelText, ignoreCase: true, out var l) || !Enum.IsDefined(l) || int.TryParse(levelText, out _)) return (null, "Unknown level.");
+            level = l;
+        }
+
+        var ids = new List<long>();
+        foreach (var part in q["sources"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (!long.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out var id) || ids.Count >= 100) return (null, "Invalid source list.");
+            ids.Add(id);
+        }
+
+        long? from = null, to = null;
+        if (q["from"].ToString() is { Length: > 0 } f)
+        {
+            if (!DateTimeOffset.TryParse(f, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var d)) return (null, "Invalid start time.");
+            from = d.ToUnixTimeMilliseconds();
+        }
+
+        if (q["to"].ToString() is { Length: > 0 } t)
+        {
+            if (!DateTimeOffset.TryParse(t, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var d)) return (null, "Invalid end time.");
+            to = d.ToUnixTimeMilliseconds();
+        }
+
+        var limit = 100;
+        if (q["limit"].ToString() is { Length: > 0 } lt && (!int.TryParse(lt, NumberStyles.None, CultureInfo.InvariantCulture, out limit) || limit < 1)) return (null, "Invalid limit.");
+        var text = q["q"].ToString();
+        var category = q["category"].ToString();
+        if (text.Length > FtsQuery.MaxInputLength || category.Length > 200) return (null, "The search text is too long.");
+        return (new SearchRequest
+        {
+            Text = text,
+            MinLevel = level,
+            SourceIds = ids,
+            Category = category.Length == 0 ? null : category,
+            FromMs = from,
+            ToMs = to,
+            ExceptionsOnly = q["exceptions"] == "1",
+            IncludeUnparsed = q["unparsed"] != "0",
+            OldestFirst = q["order"] == "oldest",
+            Limit = Math.Min(limit, SearchService.MaxLimit),
+            Cursor = q["cursor"].ToString() is { Length: > 0 } c ? c : null,
+        }, null);
+    }
+
+    /// <summary>CSV cell with quoting and protection against spreadsheet formula injection.</summary>
+    internal static string Csv(string value)
+    {
+        var v = value.Replace("\r", " ", StringComparison.Ordinal).Replace("\n", " ", StringComparison.Ordinal);
+        if (v.Length > 0 && v[0] is '=' or '+' or '-' or '@' or '\t') v = "'" + v;
+        return "\"" + v.Replace("\"", "\"\"", StringComparison.Ordinal) + "\"";
+    }
+
+    private static IResult Bad(string message) => Results.BadRequest(new { error = "invalid", message });
+
+    private static long SizeOf(string file) => File.Exists(file) ? new FileInfo(file).Length : 0;
+
+    private static long DirectorySize(string dir) =>
+        Directory.Exists(dir) ? new DirectoryInfo(dir).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length) : 0;
+}
+
+/// <summary>Counts imports in progress so temporary files are not cleaned while in use.</summary>
+public sealed class ImportTracker
+{
+    private int _active;
+
+    public int Active => Volatile.Read(ref _active);
+
+    public IDisposable Begin()
+    {
+        Interlocked.Increment(ref _active);
+        return new Release(this);
+    }
+
+    private sealed class Release(ImportTracker owner) : IDisposable
+    {
+        private int _done;
+
+        public void Dispose()
+        {
+            if (Interlocked.Exchange(ref _done, 1) == 0) Interlocked.Decrement(ref owner._active);
+        }
+    }
+}

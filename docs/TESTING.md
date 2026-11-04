@@ -1,0 +1,57 @@
+# Testing and recorded results
+
+All data used in tests is synthetic (`tests/fixtures`, generated logs). Never test with real logs outside an
+approved environment.
+
+## Automated checks
+
+`scripts/check.sh` runs, in order:
+
+| Check | Tool |
+|---|---|
+| Secret and PHI scan | `scripts/check-secrets.py` (keys, tokens, credentials, non-synthetic UIDs/names, public IPs, forbidden file types) |
+| Locked restore | `dotnet restore --locked-mode` (lock files must match) |
+| Formatting and code style | `dotnet format --verify-no-changes` (`.editorconfig`) |
+| Build with analyzers | `dotnet build -c Release`, `AnalysisLevel=latest-recommended`, warnings as errors, NuGet Audit |
+| Unit and integration tests | xUnit, 98 tests (parsers, line reader, assembler, ingestion, rotation/truncation, search, query safety, bundle import attacks, path validation, configuration, HTTP security in both modes, end-to-end API) |
+| Dependency vulnerabilities | `dotnet list package --vulnerable --include-transitive`; `npm audit` for the UI type-check tool |
+| UI type check | TypeScript 7.0.2 `checkJs` over `Ui/app.js` |
+
+CI (`.github/workflows/ci.yml`) runs the same script on Linux, builds and probes the container image, validates the
+Compose file, and builds/starts the portable executable on Windows, macOS and Linux.
+
+## Results recorded on 2026-11-04 (development container, Ubuntu 24.04, .NET SDK 10.0.114, 4 CPUs)
+
+These checks were actually run; nothing below is assumed.
+
+| Check | Result |
+|---|---|
+| Secret/PHI scan | Passed (83 files). A planted file with a real-looking UID, a non-synthetic name, a public IP, a private-key header and a password was correctly rejected (5 findings). |
+| Locked restore, format, build | Passed, no warnings |
+| Tests | 98 passed, 0 failed |
+| Vulnerable packages (NuGet, transitive) | None reported |
+| npm audit (TypeScript) | 0 vulnerabilities |
+| UI type check | Passed, after fixing seven type errors it found |
+| Portable publish | win-x64 (PE32+ x86-64), osx-arm64 (Mach-O arm64) and linux-x64 single-file packages built; lock files unchanged by cross-publishing |
+| Portable smoke test (linux-x64 package) | Started from the extracted zip; listening socket only on 127.0.0.1; API without session returned 401; a second instance on the same data folder was refused |
+| Browser test (Playwright, Chromium) | Added two sources, scanned, searched an accession number: 4 matches, 4 highlighted terms; switching the highlight colour applied immediately; event detail showed lines, bytes and verified original text; a search with no match showed the "No matching event found" explanation; dark and light themes rendered; no browser console errors |
+| Container image | Built from the pinned digests (291 MB); refused to start without identity configuration; healthy under `--read-only --cap-drop ALL --security-opt no-new-privileges` as uid 1654; no identity 401, disallowed identity 403, wrong Host 421, allowed identity 200; read-only mount detected; paths outside `/sources` and Windows/UNC paths refused with explanations; Europe/Lisbon conversion worked; bundle upload indexed; container logs contained only ids and counts |
+| Compose file | `docker compose config` valid; proxy published on 127.0.0.1 only; analyser on an internal network without a published port |
+| Volume test | See [ARCHITECTURE.md](ARCHITECTURE.md#measured-performance-synthetic-data-this-build-environment): 300 MB, 1.78 million events in 105 s; identifier searches under 10 ms |
+| Concurrency stress | Three rounds of scans (30 MB plus fixtures) while six threads searched, read the overview and sources, and new sources were added: 0 errors |
+
+### Observed issue
+
+During one of nine browser runs, the scan of the second source failed with a `SqliteException` that could not be
+reproduced in seven further runs or in the concurrency stress test. Because routine diagnostics deliberately omit
+exception messages, the cause was not captured. Changes made: diagnostics now include the numeric SQLite result code
+(no data), and a scan that meets a transient lock (SQLITE_BUSY/LOCKED) is retried once from its committed offsets.
+If the failure recurs, the logged code identifies the cause. This remains an open item.
+
+## Not run here (needs the target environments)
+
+* GitHub Actions itself (the workflow was written but runs only on GitHub; first run pending).
+* Windows and macOS execution of the portable packages (built here, executed only in CI or by a person); Windows
+  SmartScreen and macOS Gatekeeper behaviour with unsigned binaries.
+* oauth2-proxy with a real identity provider (the image registry was not reachable from this environment).
+* Real B3DWEB Gateway and DICOM Router logs (only synthetic fixtures modelled on the described formats were used).

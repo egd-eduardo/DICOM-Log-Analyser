@@ -1,0 +1,11 @@
+2026-10-27 00:00:06.059 +00:00 [INF] DicomRouter.Dicom.RouterScp: Association accepted from TESTMOD01 at 192.0.2.10:104
+2026-10-27 00:00:06.512 +00:00 [INF] DicomRouter.Dicom.RouterScp: C-STORE received SOPInstanceUID=2.25.330019287465512900918273645564738291 PatientID=TEST000456 Accession=SYNACC0456
+2026-10-27 00:00:07.120 +00:00 [ERR] DicomRouter.Forwarding.ForwardingService: Forwarding of study 2.25.271828182845904523536028747135266249 to destination TESTCLOUD failed
+System.Net.Http.HttpRequestException: Response status code does not indicate success: 503 (Service Unavailable).
+ ---> System.IO.IOException: Unable to read data from the transport connection.
+   at System.Net.Http.HttpConnection.SendAsync(HttpRequestMessage request, Boolean async, CancellationToken cancellationToken)
+   --- End of inner exception stack trace ---
+   at DicomRouter.Forwarding.CloudGatewayClient.UploadAsync(String studyUid) in /src/Forwarding/CloudGatewayClient.cs:line 141
+2026-10-27 00:00:09.001 +00:00 [WRN] DicomRouter.CloudGateway.CloudGatewayService: Retry 1 of 5 for destination TESTCLOUD
+2026-10-27 00:01:15.448 +00:00 [INF] DicomRouter.QueryRetrieve.QueryRetrieveJob`1[DicomRouter.Model.Study]: Q/R job 17 completed, 3 studies retrieved
+2026-10-27 00:02:00.000 +01:00 [INF] DicomRouter.Forwarding.ForwardingService: Forwarding of study 2.25.271828182845904523536028747135266249 to destination TESTCLOUD succeeded

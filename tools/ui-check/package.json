@@ -1,0 +1,11 @@
+{
+  "name": "dicom-log-analyser-ui-check",
+  "private": true,
+  "description": "Development-only type check of the embedded UI JavaScript (not shipped).",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "7.0.2"
+  }
+}

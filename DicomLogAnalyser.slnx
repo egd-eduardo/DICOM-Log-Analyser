@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DicomLogAnalyser.Core/DicomLogAnalyser.Core.csproj" />
+    <Project Path="src/DicomLogAnalyser.Web/DicomLogAnalyser.Web.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DicomLogAnalyser.Tests/DicomLogAnalyser.Tests.csproj" />
+  </Folder>
+</Solution>
