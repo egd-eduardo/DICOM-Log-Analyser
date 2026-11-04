@@ -90,6 +90,8 @@ public static class AppHost
         builder.Services.AddSingleton(new LaunchTokenService(time));
         builder.Services.AddSingleton<ScanCoordinator>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<ScanCoordinator>());
+        builder.Services.AddSingleton<LiveIndexer>();
+        builder.Services.AddHostedService(sp => sp.GetRequiredService<LiveIndexer>());
 
         var app = builder.Build();
         app.UseMiddleware<ErrorHandlingMiddleware>();

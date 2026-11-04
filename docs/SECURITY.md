@@ -87,6 +87,9 @@ highlight colour and theme are stored in `localStorage` (preferences only, no da
   control or reserved characters, symbolic links or special files, encryption, duplicates (case-insensitive), more
   than 20 000 entries, per-file and total expanded size limits and a compression ratio above 200:1 measured on bytes
   actually written. Non-log files and nested archives are skipped and listed. Any failure removes everything.
+* **Live view:** `/api/tail` opens only files chosen for analysis in that source (or a bundle's files), after resolving
+  the path inside the source folder and refusing links; any other name returns 403. Files are opened read-only with
+  sharing. Viewers may use it, as it shows the same files their searches cover.
 * **CSV export:** quoted cells, newlines flattened, formula prefixes (`= + - @ tab`) neutralised.
 * **JSON:** unknown properties rejected, depth limited, enums as strings; request bodies limited to 1 MB except bundle
   upload.

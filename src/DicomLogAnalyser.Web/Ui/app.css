@@ -115,6 +115,19 @@ dl.meta dd { margin: 0; word-break: break-all; }
 ul.plain { padding-left: 18px; }
 kbd { border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; background: var(--panel-2); }
 progress { width: 100%; }
+.live-controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 8px; }
+.live-controls label { min-width: 0; }
+.live-controls #lv-file { max-width: 360px; }
+.live-out { height: 64vh; overflow: auto; background: var(--log-bg); border: 1px solid var(--border); border-radius: 6px; padding: 6px 0;
+  font: 13px/1.45 ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+.ll { padding: 0 10px; border-left: 3px solid transparent; }
+.ll.lvl-error, .ll.lvl-fatal { color: var(--danger); }
+.ll.lvl-fatal { font-weight: 700; }
+.ll.lvl-warning { color: var(--warn); }
+.ll.cont { opacity: .85; }
+.ll.fresh { border-left-color: var(--accent); }
+.ll.hide { display: none; }
+.live-note { color: var(--muted); font-style: italic; padding: 2px 10px; }
 .chooser { background: var(--panel); border: 1px solid var(--accent); border-radius: 8px; padding: 12px 14px; margin: 14px 0; }
 .ch-wrap { max-height: 420px; overflow-y: auto; }
 .ch-wrap td.file { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 13px; word-break: break-all; }

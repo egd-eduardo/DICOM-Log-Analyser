@@ -1,0 +1,170 @@
+using System.Net;
+using System.Net.Http.Json;
+using System.Text;
+using System.Text.Json;
+using DicomLogAnalyser.Core.Indexing;
+using DicomLogAnalyser.Core.IO;
+using DicomLogAnalyser.Core.Model;
+using DicomLogAnalyser.Core.Sources;
+using DicomLogAnalyser.Web;
+using DicomLogAnalyser.Web.Security;
+
+namespace DicomLogAnalyser.Tests;
+
+public class TailReaderTests
+{
+    [Fact]
+    public void Shows_the_last_lines_and_holds_back_a_partial_line()
+    {
+        using var t = new TempDir();
+        var path = Path.Combine(t.Path, "live.log");
+        File.WriteAllText(path, string.Concat(Enumerable.Range(1, 10).Select(i => $"INF 2026.11.03 10:00:{i:00} SPS - line {i}\r\n")) + "INF 2026.11.03 10:00:11 SPS - half");
+        var first = TailReader.ReadLast(path, 3);
+        Assert.Equal(["line 8", "line 9", "line 10"], first.Lines.Select(l => l.Text[^7..].Trim()).Select(s => s.Replace("- ", "", StringComparison.Ordinal)).ToArray());
+        Assert.True(first.HeadTruncated);
+        Assert.All(first.Lines, l => Assert.Equal(EventLevel.Info, l.Level));
+
+        // The half-written line is delivered once its line break arrives; nothing is repeated.
+        Assert.Empty(TailReader.ReadFrom(path, first.Offset, 3).Lines);
+        File.AppendAllText(path, " done\nERROR 2026.11.03 10:00:12 SCU - failed\n   at X.Y()\n");
+        var next = TailReader.ReadFrom(path, first.Offset, 3);
+        Assert.Equal(3, next.Lines.Count);
+        Assert.EndsWith("half done", next.Lines[0].Text, StringComparison.Ordinal);
+        Assert.Equal(EventLevel.Error, next.Lines[1].Level);
+        Assert.Null(next.Lines[2].Level);
+        Assert.Equal(new FileInfo(path).Length, next.Offset);
+    }
+
+    [Fact]
+    public void Truncation_or_replacement_restarts_from_the_end()
+    {
+        using var t = new TempDir();
+        var path = Path.Combine(t.Path, "live.log");
+        File.WriteAllText(path, "INF 2026.11.03 10:00:00 SPS - old line that is long enough\n");
+        var a = TailReader.ReadLast(path, 10);
+        File.WriteAllText(path, "INF 2026.11.03 11:00:00 SPS - new\n");
+        var b = TailReader.ReadFrom(path, a.Offset, 10);
+        Assert.True(b.Reset);
+        Assert.Single(b.Lines);
+    }
+
+    [Fact]
+    public void Decodes_utf8_by_default_with_latin1_fallback_bom_and_crlf()
+    {
+        using var t = new TempDir();
+        var path = Path.Combine(t.Path, "enc.log");
+        var utf8 = Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes("INF 2026.11.03 10:00:00 SPS - Ação São João\r\n")).ToArray();
+        var latin1 = Encoding.Latin1.GetBytes("INF 2026.11.03 10:00:01 SPS - Café\r\n");
+        File.WriteAllBytes(path, [.. utf8, .. latin1]);
+        var lines = TailReader.ReadLast(path, 10).Lines.Select(l => l.Text).ToArray();
+        Assert.Equal("INF 2026.11.03 10:00:00 SPS - Ação São João", lines[0]);
+        Assert.Equal("INF 2026.11.03 10:00:01 SPS - Café", lines[1]);
+    }
+}
+
+/// <summary>Live view API and near-real-time indexing on the running host.</summary>
+public sealed class LiveHostTests : IAsyncLifetime
+{
+    private readonly TempDir _temp = new();
+    private WebApplication _app = null!;
+    private int _port;
+    private readonly HttpClient _http = new(new HttpClientHandler { UseCookies = false, AllowAutoRedirect = false });
+    private string _cookie = "";
+
+    public async Task InitializeAsync()
+    {
+        _app = AppHost.Build(new AppOptions { Mode = AppMode.Local, Port = 0, DataDirectory = _temp.Sub("data"), OpenBrowser = false, LiveIntervalSeconds = 0 },
+            logging: l => l.ClearProviders());
+        _port = await AppHost.StartAsync(_app);
+        var token = _app.Services.GetRequiredService<LaunchTokenService>().Issue();
+        using var res = await _http.GetAsync(new Uri($"http://127.0.0.1:{_port}/launch?t={token}"));
+        _cookie = res.Headers.GetValues("Set-Cookie").Single().Split(';')[0];
+    }
+
+    public async Task DisposeAsync()
+    {
+        _http.Dispose();
+        await _app.StopAsync();
+        await _app.DisposeAsync();
+        Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+        _temp.Dispose();
+    }
+
+    private async Task<HttpResponseMessage> Get(string path)
+    {
+        using var req = new HttpRequestMessage(HttpMethod.Get, $"http://127.0.0.1:{_port}{path}");
+        req.Headers.Add("Cookie", _cookie);
+        return await _http.SendAsync(req);
+    }
+
+    private (long Id, string Dir) AddFolder(params string[] files)
+    {
+        var dir = _temp.Sub("logs-" + Guid.NewGuid().ToString("N")[..6]);
+        foreach (var f in files) File.WriteAllText(Path.Combine(dir, f), "INF 2026.11.03 10:00:00 SPS - start\n");
+        var repo = _app.Services.GetRequiredService<SourceRepository>();
+        var id = repo.Add(new SourceDefinition { Label = "Live", Kind = SourceKinds.Folder, Path = dir, TimeZone = "Europe/Lisbon" });
+        return (id, dir);
+    }
+
+    [Fact]
+    public async Task Only_chosen_files_can_be_viewed_live()
+    {
+        var (id, dir) = AddFolder("a.log", "b.log");
+        _app.Services.GetRequiredService<SourceRepository>().SetSelection(id, ["a.log"], ["a.log", "b.log"]);
+        File.WriteAllText(Path.Combine(_temp.Path, "secret.log"), "x\n");
+
+        using (var ok = await Get($"/api/tail?source={id}&file=a.log&lines=10"))
+        {
+            Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+            var body = await ok.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("info", body.GetProperty("lines")[0].GetProperty("l").GetString());
+        }
+
+        foreach (var file in new[] { "b.log", "../secret.log", "..%2Fsecret.log", "/etc/passwd" })
+        {
+            using var res = await Get($"/api/tail?source={id}&file={file}");
+            Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
+        }
+
+        using var list = await Get($"/api/tail/files?source={id}");
+        Assert.Equal(1, (await list.Content.ReadFromJsonAsync<JsonElement>()).GetArrayLength());
+    }
+
+    [Fact]
+    public async Task Growing_chosen_file_is_indexed_without_a_manual_scan()
+    {
+        var (id, dir) = AddFolder("live.log");
+        var coordinator = _app.Services.GetRequiredService<ScanCoordinator>();
+        coordinator.EnqueueScan("test", [id]);
+        await WaitFor(() => Count() == 1);
+        var watcher = _app.Services.GetRequiredService<LiveIndexer>();
+        watcher.CheckOnce();
+        await WaitIdle(coordinator);
+
+        File.AppendAllText(Path.Combine(dir, "live.log"), "ERROR 2026.11.03 10:00:05 SCU - C-STORE failed SYNACC0042\n");
+        Assert.Equal(1, watcher.CheckOnce());
+        await WaitFor(() => Count() == 2);
+        Assert.Equal(0, watcher.CheckOnce());
+        var hit = _app.Services.GetRequiredService<SearchService>().Search(new SearchRequest { Text = "SYNACC0042" });
+        Assert.Equal(1, hit.MatchCount);
+        // Live updates do not flood the activity record.
+        Assert.DoesNotContain(_app.Services.GetRequiredService<DicomLogAnalyser.Core.Diagnostics.AuditLog>().Recent(50), a => a.Actor == "live");
+    }
+
+    private long Count()
+    {
+        using var c = _app.Services.GetRequiredService<IndexDatabase>().Open();
+        return IndexDatabase.Scalar<long>(c, "SELECT count(*) FROM events");
+    }
+
+    private static async Task WaitFor(Func<bool> condition)
+    {
+        for (var i = 0; i < 200 && !condition(); i++) await Task.Delay(25);
+        Assert.True(condition());
+    }
+
+    private static async Task WaitIdle(ScanCoordinator c)
+    {
+        for (var i = 0; i < 200 && (c.Status.State != "idle" || c.Status.Queued > 0); i++) await Task.Delay(25);
+    }
+}

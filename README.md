@@ -132,6 +132,27 @@ Notes:
   whose first 200 lines match no supported format are reported as *unrecognised* rather than indexed as noise.
 * Symbolic links and junctions inside a source are not followed.
 
+## Live view and automatic updates
+
+* **Live** tab: follows a chosen file as it is written, like BareTail or `tail -f`. Pick a source and file; the last
+  200 to 5 000 lines are shown and new lines appear every second. The view follows the end; scroll up to read and it
+  stops following, scroll back to the end and it follows again. **Pause** and **Clear** are available. Errors are red
+  and warnings amber; **Highlight** marks terms in your highlight colour, optionally showing only matching lines. A
+  partly written last line appears once complete; a truncated, rotated or replaced file is picked up again from its end.
+  The file is read directly (not from the index) and only read.
+* **Automatic index updates:** while the analyser runs, the chosen files of enabled folders are checked every 5 seconds
+  (size and date only) and new lines are indexed incrementally, so Search and the Overview stay current without pressing
+  Scan. Change the interval with `--live-interval SECONDS` (or `DLA_LIVE_INTERVAL_SECONDS`; 0 turns it off).
+* **Encoding:** UTF-8 by default (with or without byte order mark); a line that is not valid UTF-8 is read as
+  Windows Latin-1, so accented characters from older tools still display.
+
+### Why there is an index (and nothing to install)
+
+The live view reads files directly. Search, filters, the overview and the links back to original lines use a local
+index: a single SQLite file in the data folder, built into the program. There is no database server, service, account
+or password to manage. Without an index each search would re-read every chosen file (seconds instead of milliseconds)
+and the overview would not be possible.
+
 ## Importing a bundle from an unreachable computer
 
 On the computer that has the logs, create a zip (read-only; the original files are not changed):

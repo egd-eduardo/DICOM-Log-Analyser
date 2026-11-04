@@ -109,9 +109,10 @@ function buildHighlight(q) {
   return new RegExp('(?<![\\p{L}\\p{N}])(' + escaped.join('|') + ')', 'giu');
 }
 
-/** Appends text to a node, wrapping matches in <mark>. @param {HTMLElement} node @param {string} text */
-function appendHighlighted(node, text) {
-  if (!highlightRegex || !text) { node.append(text ?? ''); return; }
+/** Appends text to a node, wrapping matches in <mark>. @param {HTMLElement} node @param {string} text @param {RegExp | null} [regex] */
+function appendHighlighted(node, text, regex = highlightRegex) {
+  if (!regex || !text) { node.append(text ?? ''); return; }
+  const highlightRegex = regex;
   highlightRegex.lastIndex = 0;
   let last = 0;
   let m;
@@ -211,6 +212,7 @@ const when = (iso) => (iso ? iso.replace('T', ' ').slice(0, 19) + ' UTC' : 'neve
 const loaders = /** @type {Record<string, () => Promise<void>>} */ ({
   overview: loadOverview,
   search: async () => { await loadSources(); $('q').focus(); },
+  live: openLive,
   sources: loadSources,
   import: loadSources,
   maintenance: loadMaintenance,
@@ -220,6 +222,7 @@ const loaders = /** @type {Record<string, () => Promise<void>>} */ ({
 function showTab(name) {
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', /** @type {HTMLElement} */ (b).dataset.tab === name);
   for (const p of document.querySelectorAll('.panel')) p.classList.toggle('hidden', p.id !== 'tab-' + name);
+  if (name !== 'live') stopLive();
   loaders[name]?.().catch((e) => notify(e.message));
 }
 
@@ -541,6 +544,93 @@ function sourceBody() {
   };
 }
 
+// ---------- Live view (tail -f / BareTail style) ----------
+
+const live = { source: '', file: '', offset: -1, timer: 0, paused: false, level: '', regex: /** @type {RegExp | null} */ (null), busy: false };
+
+async function openLive() {
+  const sel = $('lv-source');
+  const keep = sel.value;
+  sourcesCache = await api('/api/sources');
+  sel.replaceChildren();
+  for (const s of sourcesCache.filter((x) => x.enabled)) sel.append(new Option(s.label + (s.kind === 'bundle' ? ' (bundle)' : ''), String(s.id)));
+  if (!sel.options.length) { $('lv-status').textContent = 'Add a source first (Sources).'; return; }
+  if (keep && [...sel.options].some((o) => o.value === keep)) sel.value = keep;
+  await loadLiveFiles();
+}
+
+async function loadLiveFiles() {
+  const files = await api('/api/tail/files?source=' + encodeURIComponent($('lv-source').value));
+  const sel = $('lv-file');
+  const keep = sel.value;
+  sel.replaceChildren();
+  for (const f of files) sel.append(new Option(f.path + '  (' + new Date(f.modifiedUtc).toLocaleString('en-GB') + ')', f.path));
+  if (!files.length) { stopLive(); $('lv-out').replaceChildren(); $('lv-status').textContent = 'No files are chosen for this source (Sources, Files).'; return; }
+  if (keep && files.some((/** @type {any} */ f) => f.path === keep)) sel.value = keep;
+  startLive();
+}
+
+function stopLive() { window.clearTimeout(live.timer); live.timer = 0; }
+
+function startLive() {
+  stopLive();
+  live.source = $('lv-source').value; live.file = $('lv-file').value; live.offset = -1; live.level = '';
+  $('lv-out').replaceChildren();
+  pollLive();
+}
+
+/** @param {any} line @param {boolean} fresh */
+function liveLine(line, fresh) {
+  if (line.l) live.level = line.l;
+  const div = el('div', 'll' + (live.level ? ' lvl-' + live.level : '') + (line.l ? '' : ' cont') + (fresh ? ' fresh' : ''));
+  appendHighlighted(div, line.t, live.regex);
+  if ($('lv-only').checked && live.regex && !matches(line.t)) div.classList.add('hide');
+  return div;
+}
+
+/** @param {string} text */
+function matches(text) { if (!live.regex) return true; live.regex.lastIndex = 0; return live.regex.test(text); }
+
+async function pollLive() {
+  if ($('tab-live').classList.contains('hidden') || live.busy) return;
+  const out = $('lv-out');
+  if (!live.paused) {
+    live.busy = true;
+    try {
+      const p = new URLSearchParams({ source: live.source, file: live.file, lines: $('lv-lines').value });
+      if (live.offset >= 0) p.set('from', String(live.offset));
+      const r = await api('/api/tail?' + p.toString());
+      if (r.reset) { out.replaceChildren(el('div', 'live-note', '[The file was truncated, rotated or replaced; showing its end again.]')); live.level = ''; }
+      if (live.offset < 0 && r.headTruncated) out.append(el('div', 'live-note', '[Earlier lines are not shown. Use Search for the whole indexed history.]'));
+      for (const old of out.querySelectorAll('.fresh')) old.classList.remove('fresh');
+      const fresh = live.offset >= 0 && !r.reset;
+      const frag = document.createDocumentFragment();
+      for (const line of r.lines) frag.append(liveLine(line, fresh));
+      out.append(frag);
+      const max = Number($('lv-lines').value);
+      while (out.childElementCount > max + 2) out.firstElementChild?.remove();
+      live.offset = r.offset;
+      if ($('lv-follow').checked) out.scrollTop = out.scrollHeight;
+      $('lv-status').className = 'small muted';
+      $('lv-status').textContent = `${live.file} · ${bytes(r.size)} · last change ${new Date(r.modifiedUtc).toLocaleTimeString('en-GB')} · checked ${new Date().toLocaleTimeString('en-GB')}` + (r.lines.length && fresh ? ` · ${r.lines.length} new line(s)` : '');
+    } catch (e) {
+      $('lv-status').className = 'small err-text';
+      $('lv-status').textContent = /** @type {Error} */ (e).message + ' Retrying…';
+    } finally { live.busy = false; }
+  }
+  live.timer = window.setTimeout(pollLive, 1000);
+}
+
+function applyLiveFilter() {
+  live.regex = buildHighlight($('lv-hl').value);
+  const only = $('lv-only').checked && live.regex;
+  for (const div of $('lv-out').querySelectorAll('.ll')) {
+    const text = div.textContent || '';
+    div.replaceChildren(); appendHighlighted(div, text, live.regex);
+    div.classList.toggle('hide', Boolean(only) && !matches(text));
+  }
+}
+
 // ---------- File chooser (at most 5 days of files per folder) ----------
 
 /** @type {{id: number, maxDays: number, files: any[]} | null} */
@@ -627,7 +717,7 @@ async function pollScan() {
   try {
     const s = await api('/api/scan/status');
     const bar = $('scanbar');
-    if (s.state === 'running') {
+    if (s.state === 'running' && s.operation !== 'Live update') {
       bar.classList.remove('hidden');
       bar.textContent = `${s.operation}${s.sourceLabel ? ' "' + s.sourceLabel + '"' : ''}: ${s.filesDone}/${s.filesTotal} files, ${bytes(s.bytesRead)} read, ${num(s.eventsAdded)} events indexed${s.queued ? ', ' + s.queued + ' more queued' : ''}.`;
       pollTimer = window.setTimeout(pollScan, 1500);
@@ -710,6 +800,22 @@ async function start() {
   $('scan-cancel').addEventListener('click', () => api('/api/scan/cancel', { method: 'POST', body: '{}' }).catch((e) => notify(e.message)));
   $('s-validate').addEventListener('click', () => api('/api/sources/validate', { method: 'POST', body: JSON.stringify({ path: $('s-path').value }) }).then(renderValidation).catch((e) => notify(e.message)));
   $('s-cancel').addEventListener('click', resetSourceForm);
+  $('lv-source').addEventListener('change', () => loadLiveFiles().catch((e) => notify(e.message)));
+  $('lv-file').addEventListener('change', startLive);
+  $('lv-lines').addEventListener('change', startLive);
+  $('lv-hl').addEventListener('input', applyLiveFilter);
+  $('lv-only').addEventListener('change', applyLiveFilter);
+  $('lv-pause').addEventListener('click', () => {
+    live.paused = !live.paused;
+    $('lv-pause').textContent = live.paused ? 'Resume' : 'Pause';
+    if (live.paused) $('lv-status').textContent = 'Paused. New lines are collected again when you resume.';
+  });
+  $('lv-clear').addEventListener('click', () => $('lv-out').replaceChildren());
+  // Like a tail viewer: scrolling up stops following; scrolling back to the end follows again.
+  $('lv-out').addEventListener('scroll', () => {
+    const o = $('lv-out');
+    $('lv-follow').checked = o.scrollTop + o.clientHeight >= o.scrollHeight - 24;
+  });
   $('ch-close').addEventListener('click', () => { $('chooser').classList.add('hidden'); chooser = null; });
   $('ch-latest').addEventListener('click', chooseLatest);
   $('ch-none').addEventListener('click', () => {

@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Text;
 using DicomLogAnalyser.Core.Bundles;
 using DicomLogAnalyser.Core.Diagnostics;
+using DicomLogAnalyser.Core.IO;
 using DicomLogAnalyser.Core.Indexing;
 using DicomLogAnalyser.Core.Model;
 using DicomLogAnalyser.Core.Parsing;
@@ -230,6 +231,54 @@ public static class Endpoints
             return Results.Json(new { cancelled = true });
         });
 
+        // Live view (BareTail-style): reads a chosen file directly, without the index. Viewers may use it: it shows the
+        // same files their searches already cover. Only files chosen for analysis (or bundle files) can be opened.
+        api.MapGet("/tail/files", (HttpContext ctx, SourceRepository repo) =>
+        {
+            if (!long.TryParse(ctx.Request.Query["source"], NumberStyles.None, CultureInfo.InvariantCulture, out var id) || repo.Get(id) is not { } source)
+                return Results.NotFound(new { error = "not_found" });
+            try
+            {
+                return Results.Json(TailFiles(source).Select(f => new { path = f.RelPath, size = f.Size, modifiedUtc = f.ModifiedUtc }));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return Results.Json(new { error = "unreachable", message = "The folder is not reachable at the moment." }, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
+        api.MapGet("/tail", (HttpContext ctx, SourceRepository repo) =>
+        {
+            var q = ctx.Request.Query;
+            if (!long.TryParse(q["source"], NumberStyles.None, CultureInfo.InvariantCulture, out var id) || repo.Get(id) is not { } source)
+                return Results.NotFound(new { error = "not_found" });
+            var rel = q["file"].ToString();
+            var lines = int.TryParse(q["lines"], NumberStyles.None, CultureInfo.InvariantCulture, out var n) ? n : 500;
+            try
+            {
+                var allowed = TailFiles(source).Select(f => f.RelPath).ToHashSet(StringComparer.Ordinal);
+                var full = Path.GetFullPath(Path.Combine(source.Path, rel.Replace('/', Path.DirectorySeparatorChar)));
+                if (!allowed.Contains(rel) || !PathValidator.IsSameOrInside(full, source.Path) || new FileInfo(full).LinkTarget is not null)
+                    return Results.Json(new { error = "not_allowed", message = "Only files chosen for analysis can be viewed live." }, statusCode: StatusCodes.Status403Forbidden);
+                var chunk = q["from"].ToString() is { Length: > 0 } f && long.TryParse(f, NumberStyles.None, CultureInfo.InvariantCulture, out var from)
+                    ? TailReader.ReadFrom(full, from, lines)
+                    : TailReader.ReadLast(full, lines);
+                return Results.Json(new
+                {
+                    lines = chunk.Lines.Select(l => new { t = l.Text, l = l.Level?.ToString().ToLowerInvariant() }),
+                    offset = chunk.Offset,
+                    size = chunk.Size,
+                    reset = chunk.Reset,
+                    headTruncated = chunk.HeadTruncated,
+                    modifiedUtc = chunk.ModifiedUtc,
+                });
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return Results.Json(new { error = "unreachable", message = "The file is not reachable at the moment (share offline, file removed or locked)." }, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
         api.MapGet("/scan/status", (ScanCoordinator coordinator) => Results.Json(coordinator.Status));
 
         admin.MapPost("/bundles", async (HttpContext ctx, BundleImporter importer, SourceRepository repo, AuditLog audit, ScanCoordinator coordinator, ImportTracker tracker) =>
@@ -302,6 +351,16 @@ public static class Endpoints
                 ? Results.Accepted(value: new { queued = true })
                 : Results.Json(new { error = "busy" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         });
+    }
+
+    /// <summary>Files that may be viewed live: the chosen files of a folder (default choice if none saved), or a bundle's files.</summary>
+    internal static List<CandidateFile> TailFiles(SourceDefinition source)
+    {
+        var tz = Ingestor.ResolveTimeZone(source.TimeZone);
+        var all = FileSelection.List(source, tz);
+        if (source.Kind == SourceKinds.Bundle) return all.ToList();
+        var chosen = new HashSet<string>(source.SelectedFiles ?? FileSelection.Default(all), StringComparer.Ordinal);
+        return all.Where(f => chosen.Contains(f.RelPath)).ToList();
     }
 
     internal static List<string> CheckSettings(SourceInput input)

@@ -14,6 +14,7 @@
     <nav id="tabs" aria-label="Sections">
       <button data-tab="overview" class="active">Overview</button>
       <button data-tab="search">Search</button>
+      <button data-tab="live">Live</button>
       <button data-tab="sources">Sources</button>
       <button data-tab="import">Import bundle</button>
       <button data-tab="maintenance">Maintenance</button>
@@ -77,6 +78,23 @@
       <div id="search-summary"></div>
       <div class="table-wrap"><table id="results" class="results"><thead><tr><th>Time</th><th>Level</th><th>Source</th><th>Category</th><th>Message</th></tr></thead><tbody></tbody></table></div>
       <div class="row"><button id="more" class="ghost hidden">Load more</button><a id="export" class="button ghost hidden" href="#">Export CSV</a></div>
+    </section>
+
+    <section id="tab-live" class="panel hidden">
+      <h1>Live view</h1>
+      <p class="muted small">Follows a log file as it is written, like a tail viewer: new lines appear every second. The file is read directly and only read. Errors are red, warnings amber; text you enter under Highlight is marked in your highlight colour.</p>
+      <div class="live-controls">
+        <label>Source <select id="lv-source"></select></label>
+        <label>File <select id="lv-file"></select></label>
+        <label>Lines <select id="lv-lines"><option>200</option><option selected>500</option><option>2000</option><option>5000</option></select></label>
+        <label>Highlight <input id="lv-hl" maxlength="200" placeholder="e.g. SYNACC0001 failed"></label>
+        <label class="check"><input type="checkbox" id="lv-only"> Only matching lines</label>
+        <label class="check"><input type="checkbox" id="lv-follow" checked> Follow end</label>
+        <button id="lv-pause" type="button" class="ghost">Pause</button>
+        <button id="lv-clear" type="button" class="ghost">Clear</button>
+      </div>
+      <p id="lv-status" class="small muted" role="status"></p>
+      <div id="lv-out" class="live-out" tabindex="0"></div>
     </section>
 
     <section id="tab-sources" class="panel hidden">

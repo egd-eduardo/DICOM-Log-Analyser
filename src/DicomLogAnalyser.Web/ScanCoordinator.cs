@@ -26,7 +26,10 @@ public sealed class ScanCoordinator(
 
     private abstract record WorkItem(string Actor);
 
-    private sealed record ScanWork(string Actor, IReadOnlyList<long>? SourceIds) : WorkItem(Actor);
+    private sealed record ScanWork(string Actor, IReadOnlyList<long>? SourceIds, bool Live = false) : WorkItem(Actor);
+
+    public const string LiveOperation = "Live update";
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<long, byte> _pendingLive = new();
 
     private sealed record DeleteWork(string Actor, long SourceId) : WorkItem(Actor);
 
@@ -46,6 +49,15 @@ public sealed class ScanCoordinator(
     }
 
     public bool EnqueueScan(string actor, IReadOnlyList<long>? sourceIds) => Enqueue(new ScanWork(actor, sourceIds));
+
+    /// <summary>Queues a quiet incremental scan for new lines, unless one for this source is already waiting.</summary>
+    public bool EnqueueLiveScan(long sourceId)
+    {
+        if (!_pendingLive.TryAdd(sourceId, 0)) return false;
+        if (Enqueue(new ScanWork("live", [sourceId], Live: true))) return true;
+        _pendingLive.TryRemove(sourceId, out _);
+        return false;
+    }
 
     public bool EnqueueDelete(string actor, long sourceId) => Enqueue(new DeleteWork(actor, sourceId));
 
@@ -155,6 +167,12 @@ public sealed class ScanCoordinator(
 
     private void RunScan(ScanWork work, CancellationToken ct)
     {
+        if (work.Live)
+        {
+            RunLiveScan(work, ct);
+            return;
+        }
+
         Begin("Scanning");
         var list = sources.List().Where(s => s.Enabled && (work.SourceIds is null || work.SourceIds.Contains(s.Id))).ToList();
         var progress = new Progress(this);
@@ -182,6 +200,19 @@ public sealed class ScanCoordinator(
         }
 
         Finish(list.Count == 0 ? "No enabled sources to scan." : string.Join(" · ", outcomes));
+    }
+
+    /// <summary>Live update: no audit entry, no change to the last manual outcome, diagnostics only when lines were added.</summary>
+    private void RunLiveScan(ScanWork work, CancellationToken ct)
+    {
+        var id = work.SourceIds![0];
+        _pendingLive.TryRemove(id, out _);
+        if (sources.Get(id) is not { Enabled: true } source) return;
+        var previous = Status.LastOutcome;
+        Begin(LiveOperation);
+        var summary = ScanOne(source, new Progress(this), ct);
+        if (summary.EventsAdded > 0) logger.LogDebug("Live update of source {SourceId}: {Events} events.", id, summary.EventsAdded);
+        Finish(previous ?? "");
     }
 
     /// <summary>

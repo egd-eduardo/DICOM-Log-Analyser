@@ -60,6 +60,18 @@ that were not present at choice time are counted as *new* (`new_files`) and repo
 renamed file (its indexed content) and the chosen name. Bundles have no selection and are indexed completely. Schema
 version 2 adds these columns; a version 1 index is upgraded in place.
 
+## Live view and live indexing
+
+* `TailReader` serves the Live tab: the last N complete lines of a file (reading at most 2 MB from the end), then the
+  complete lines written after a byte offset. A partial final line is withheld until its line break arrives; a file
+  shorter than the offset is reported as reset. Files are opened read-only with sharing for each request and never
+  held open. Only files chosen for analysis (or a bundle's files) can be opened, resolved inside the source folder,
+  never through links.
+* `LiveIndexer` (hosted service) checks size and modification time of chosen files every `--live-interval` seconds
+  (default 5) and queues a quiet incremental scan for a changed source (deduplicated, no activity-record entry, no
+  progress bar). Polling is used instead of file-system notifications because network shares do not deliver those
+  reliably.
+
 ## Normalised event model (`events` table)
 
 | Field | Meaning |

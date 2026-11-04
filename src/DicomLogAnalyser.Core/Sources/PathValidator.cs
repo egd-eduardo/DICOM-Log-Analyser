@@ -184,8 +184,10 @@ public sealed partial class PathValidator
         return new ValidationResult(full, errors, warnings, info);
     }
 
-    internal static bool IsSameOrInside(string path, string root)
+    public static bool IsSameOrInside(string path, string root)
     {
+        ArgumentNullException.ThrowIfNull(path);
+        ArgumentNullException.ThrowIfNull(root);
         var comparison = OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase;
         var p = Path.TrimEndingDirectorySeparator(path);
         var r = Path.TrimEndingDirectorySeparator(root);
