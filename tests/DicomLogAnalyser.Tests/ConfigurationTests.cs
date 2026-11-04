@@ -14,6 +14,7 @@ public class ConfigurationTests
         ["DLA_PUBLIC_ORIGIN"] = "https://dicomlogs.example.internal",
         ["DLA_TRUSTED_PROXIES"] = "172.30.0.0/24",
         ["DLA_ALLOWED_EMAIL_DOMAINS"] = "example.org",
+        ["DLA_ADMIN_USERS"] = "admin@example.org",
         // An absolute path on the platform running the tests (a container uses /sources).
         ["DLA_SOURCE_ROOTS"] = OperatingSystem.IsWindows() ? @"C:\sources" : "/sources",
         ["DLA_DATA_DIR"] = OperatingSystem.IsWindows() ? @"C:\data" : "/data",
@@ -41,12 +42,25 @@ public class ConfigurationTests
     [InlineData("DLA_ALLOWED_EMAIL_DOMAINS", null)]
     [InlineData("DLA_ALLOWED_EMAIL_DOMAINS", "*")]
     [InlineData("DLA_SOURCE_ROOTS", null)]
+    [InlineData("DLA_ADMIN_USERS", null)]
+    [InlineData("DLA_ADMIN_USERS", "*")]
+    [InlineData("DLA_ADMIN_USERS", "example.org")]
+    [InlineData("DLA_ADMIN_USERS", "outsider@elsewhere.example")]
     public void Server_mode_refuses_incomplete_or_open_configuration(string key, string? value)
     {
         var env = ValidServer();
         if (value is null) env.Remove(key);
         else env[key] = value;
         Assert.NotEmpty(AppOptions.Parse([], Env(env)).Validate());
+    }
+
+    [Fact]
+    public void Roles_admin_only_for_listed_users_in_server_mode_and_always_in_local_mode()
+    {
+        var server = AppOptions.Parse([], Env(ValidServer()));
+        Assert.True(server.IsAdmin("ADMIN@example.org"));
+        Assert.False(server.IsAdmin("viewer@example.org"));
+        Assert.True(AppOptions.Parse([], Env([])).IsAdmin("local:anyone"));
     }
 
     [Fact]

@@ -44,6 +44,11 @@ anything that does not arrive through the access proxy.
   a fixed address (`172.30.0.10/32`) on an `internal: true` network, and the analyser publishes no port.
 * **Defence in depth on authorisation:** oauth2-proxy enforces the identity provider sign-in and its allow list; the
   analyser independently checks `DLA_ALLOWED_USERS` / `DLA_ALLOWED_EMAIL_DOMAINS` (exact match, no wildcards).
+* **Roles:** *viewer* (overview, search, event detail; source paths hidden) for every allowed user, *administrator*
+  (sources, scans, imports, CSV export, maintenance, purge, activity record) only for the exact addresses in
+  `DLA_ADMIN_USERS`, which must also be allowed. Local mode's single user is the administrator. Administrator-only
+  endpoints are marked in routing metadata and enforced by the security middleware **before** any request body is read;
+  refusals return 403 and are written to the activity record.
 * **Fail closed:** the program refuses to start in central mode without an `https://` public origin, a non-`/0`
   trusted proxy range, an allow list and source roots.
 * **Header spoofing:** oauth2-proxy strips client-supplied `X-Forwarded-*` authentication headers
@@ -103,7 +108,7 @@ to warnings. Error responses are generic with the same reference. The activity r
 | V5 File Handling | High | Upload limits, content-type detection, archive traversal/link/bomb defences, storage outside any served path, read-only storage, no execution of uploaded content |
 | V6 Authentication | High | No application passwords; local: single-use launch tokens bound to the OS session; central: delegated to the organisation's IdP via oauth2-proxy (MFA/passwordless at the IdP) |
 | V7 Session Management | High | Random 256-bit server-side sessions, idle and absolute timeouts, identity binding, termination at shutdown |
-| V8 Authorization | High | Allow list checked in the application as well as the proxy; trusted-proxy check before any identity is used; single role (all authorised users are equal; see residual risks) |
+| V8 Authorization | High | Allow list checked in the application as well as the proxy; trusted-proxy check before any identity is used; viewer/administrator roles enforced server-side before request processing, deny by default for marked endpoints, refusals audited |
 | V9 Self-contained Tokens | Low | The analyser does not consume JWTs; oauth2-proxy validates the IdP tokens |
 | V10 OAuth and OIDC | Medium | oauth2-proxy with PKCE (S256), per-request CSRF cookies, no token pass-through to the analyser |
 | V11 Cryptography | Low | CSPRNG for tokens; SHA-256 for file fingerprints and bundle checksums; constant-time token comparison |
@@ -116,8 +121,8 @@ to warnings. Error responses are generic with the same reference. The activity r
 
 ## Residual risks and limitations
 
-* **No roles.** Every allowed user can add/delete sources, import, export and purge. Restrict the allow list
-  accordingly; role separation is a candidate for a later version.
+* **Two roles only.** Viewers can still read every indexed event (PHI) through search; there is no per-source or
+  per-site access restriction. Administrators are listed by e-mail address; identity-provider groups are not used yet.
 * **Same-account access (local mode).** Malware or another process running as the same user can read the data folder
   or obtain a session. The application cannot defend against a compromised account.
 * **No at-rest encryption by the application.** Rely on BitLocker/FileVault/LUKS and encrypted backups.

@@ -28,6 +28,9 @@ public sealed class AppOptions
     public string IdentityHeader { get; init; } = "X-Forwarded-Email";
     public IReadOnlySet<string> AllowedUsers { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     public IReadOnlySet<string> AllowedEmailDomains { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Central mode: identities with the administrator role. Everyone else on the allow list is a viewer.</summary>
+    public IReadOnlySet<string> AdminUsers { get; init; } = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
     public IReadOnlyList<string> SourceRoots { get; init; } = [];
 
     public long MaxUploadBytes { get; init; } = 1024L * 1024 * 1024;
@@ -78,6 +81,7 @@ public sealed class AppOptions
             IdentityHeader = env("DLA_IDENTITY_HEADER") is { Length: > 0 } h ? h : "X-Forwarded-Email",
             AllowedUsers = new HashSet<string>(List(env("DLA_ALLOWED_USERS")), StringComparer.OrdinalIgnoreCase),
             AllowedEmailDomains = new HashSet<string>(List(env("DLA_ALLOWED_EMAIL_DOMAINS")).Select(d => d.TrimStart('@')), StringComparer.OrdinalIgnoreCase),
+            AdminUsers = new HashSet<string>(List(env("DLA_ADMIN_USERS")), StringComparer.OrdinalIgnoreCase),
             SourceRoots = List(env("DLA_SOURCE_ROOTS")),
             MaxUploadBytes = (env("DLA_MAX_UPLOAD_MB") is { Length: > 0 } mb ? long.Parse(mb, NumberStyles.None, CultureInfo.InvariantCulture) : 1024) * 1024 * 1024,
             ScanIntervalMinutes = env("DLA_SCAN_INTERVAL_MINUTES") is { Length: > 0 } si ? int.Parse(si, NumberStyles.None, CultureInfo.InvariantCulture) : 0,
@@ -110,6 +114,12 @@ public sealed class AppOptions
             problems.Add("Set DLA_ALLOWED_USERS and/or DLA_ALLOWED_EMAIL_DOMAINS: access is never granted to every authenticated identity by default.");
         if (AllowedUsers.Contains("*") || AllowedEmailDomains.Contains("*"))
             problems.Add("Wildcards are not accepted in DLA_ALLOWED_USERS or DLA_ALLOWED_EMAIL_DOMAINS.");
+        if (AdminUsers.Count == 0)
+            problems.Add("DLA_ADMIN_USERS must list at least one administrator (e-mail address). Other allowed users can only view and search.");
+        if (AdminUsers.Any(a => a.Contains('*', StringComparison.Ordinal) || !a.Contains('@', StringComparison.Ordinal)))
+            problems.Add("DLA_ADMIN_USERS must contain full e-mail addresses; wildcards and domains are not accepted.");
+        else if (AdminUsers.Any(a => !IsAllowedUser(a)))
+            problems.Add("Every DLA_ADMIN_USERS entry must also be allowed by DLA_ALLOWED_USERS or DLA_ALLOWED_EMAIL_DOMAINS.");
         if (SourceRoots.Count == 0)
             problems.Add("DLA_SOURCE_ROOTS must list the read-only mount points for log folders (for example /sources).");
         if (SourceRoots.Any(r => !Path.IsPathFullyQualified(r)))
@@ -118,6 +128,9 @@ public sealed class AppOptions
             problems.Add("DLA_IDENTITY_HEADER must be a header name such as X-Forwarded-Email.");
         return problems;
     }
+
+    /// <summary>Local mode: the person at this computer administers their own installation.</summary>
+    public bool IsAdmin(string identity) => Mode == AppMode.Local || AdminUsers.Contains(identity);
 
     public bool IsAllowedUser(string identity)
     {

@@ -34,6 +34,9 @@ public static class Endpoints
         app.MapGet("/healthz", () => Results.Text("ok", "text/plain"));
 
         var api = app.MapGroup("/api");
+        // Everything that changes data, reveals storage locations or extracts PHI in bulk needs the administrator role.
+        // Enforced by SecurityMiddleware before the request body is read.
+        var admin = app.MapGroup("/api").WithMetadata(new AdminOnlyAttribute());
         api.MapGet("/session", (HttpContext ctx, AppRuntime rt, PathValidator validator) =>
         {
             var s = SecurityMiddleware.CurrentSession(ctx);
@@ -41,6 +44,7 @@ public static class Endpoints
             {
                 mode = rt.Options.Mode == AppMode.Server ? "server" : "local",
                 identity = s.Identity,
+                role = s.IsAdmin ? "admin" : "viewer",
                 csrfToken = s.CsrfToken,
                 version = Version,
                 platform = OperatingSystem.IsWindows() ? "windows" : OperatingSystem.IsMacOS() ? "macos" : "linux",
@@ -61,7 +65,7 @@ public static class Endpoints
 
         api.MapGet("/events/{id:long}", (long id, SearchService search) => search.Get(id) is { } e ? Results.Json(e) : Results.NotFound(new { error = "not_found" }));
 
-        api.MapGet("/export.csv", async (HttpContext ctx, SearchService search, AuditLog audit) =>
+        admin.MapGet("/export.csv", async (HttpContext ctx, SearchService search, AuditLog audit) =>
         {
             var (request, error) = ParseSearch(ctx.Request.Query);
             if (error is not null)
@@ -91,11 +95,14 @@ public static class Endpoints
             }
         });
 
-        api.MapGet("/sources", (SourceRepository repo) => Results.Json(repo.List()));
+        // Viewers need the source list for filters, but not the folder paths behind it.
+        api.MapGet("/sources", (HttpContext ctx, SourceRepository repo) => SecurityMiddleware.CurrentSession(ctx).IsAdmin
+            ? Results.Json(repo.List())
+            : Results.Json(repo.List().Select(x => x with { Path = "", LastScanMessage = null })));
 
-        api.MapPost("/sources/validate", (PathInput input, PathValidator validator) => Results.Json(validator.ValidateFolder(input.Path)));
+        admin.MapPost("/sources/validate", (PathInput input, PathValidator validator) => Results.Json(validator.ValidateFolder(input.Path)));
 
-        api.MapPost("/sources", (HttpContext ctx, SourceInput input, SourceRepository repo, PathValidator validator, AuditLog audit, ScanCoordinator coordinator) =>
+        admin.MapPost("/sources", (HttpContext ctx, SourceInput input, SourceRepository repo, PathValidator validator, AuditLog audit, ScanCoordinator coordinator) =>
         {
             var errors = CheckSettings(input);
             if (errors.Count > 0) return Results.BadRequest(new { error = "invalid", messages = errors });
@@ -118,7 +125,7 @@ public static class Endpoints
             return Results.Json(new { id, validation });
         });
 
-        api.MapPut("/sources/{id:long}", (HttpContext ctx, long id, SourceInput input, SourceRepository repo, AuditLog audit, ScanCoordinator coordinator) =>
+        admin.MapPut("/sources/{id:long}", (HttpContext ctx, long id, SourceInput input, SourceRepository repo, AuditLog audit, ScanCoordinator coordinator) =>
         {
             var existing = repo.Get(id);
             if (existing is null) return Results.NotFound(new { error = "not_found" });
@@ -143,7 +150,7 @@ public static class Endpoints
             return Results.Json(new { id, reindexed = needsReindex });
         });
 
-        api.MapDelete("/sources/{id:long}", (HttpContext ctx, long id, SourceRepository repo, ScanCoordinator coordinator) =>
+        admin.MapDelete("/sources/{id:long}", (HttpContext ctx, long id, SourceRepository repo, ScanCoordinator coordinator) =>
         {
             if (repo.Get(id) is null) return Results.NotFound(new { error = "not_found" });
             coordinator.CancelCurrent();
@@ -152,12 +159,12 @@ public static class Endpoints
                 : Results.Json(new { error = "busy" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         });
 
-        api.MapPost("/scan", (HttpContext ctx, ScanInput input, ScanCoordinator coordinator) =>
+        admin.MapPost("/scan", (HttpContext ctx, ScanInput input, ScanCoordinator coordinator) =>
             coordinator.EnqueueScan(SecurityMiddleware.CurrentSession(ctx).Identity, input.SourceIds is { Count: > 0 } ids ? ids : null)
                 ? Results.Accepted(value: new { queued = true })
                 : Results.Json(new { error = "busy" }, statusCode: StatusCodes.Status503ServiceUnavailable));
 
-        api.MapPost("/scan/cancel", (ScanCoordinator coordinator) =>
+        admin.MapPost("/scan/cancel", (ScanCoordinator coordinator) =>
         {
             coordinator.CancelCurrent();
             return Results.Json(new { cancelled = true });
@@ -165,7 +172,7 @@ public static class Endpoints
 
         api.MapGet("/scan/status", (ScanCoordinator coordinator) => Results.Json(coordinator.Status));
 
-        api.MapPost("/bundles", async (HttpContext ctx, BundleImporter importer, SourceRepository repo, AuditLog audit, ScanCoordinator coordinator, ImportTracker tracker) =>
+        admin.MapPost("/bundles", async (HttpContext ctx, BundleImporter importer, SourceRepository repo, AuditLog audit, ScanCoordinator coordinator, ImportTracker tracker) =>
         {
             var q = ctx.Request.Query;
             var label = q["label"].ToString().Trim();
@@ -209,7 +216,7 @@ public static class Endpoints
             return Results.Json(new { id, result.Sha256, result.UploadBytes, result.FilesExtracted, result.BytesExtracted, result.Skipped });
         });
 
-        api.MapGet("/maintenance", (AppPaths paths, AuditLog audit, AppRuntime rt) => Results.Json(new
+        admin.MapGet("/maintenance", (AppPaths paths, AuditLog audit, AppRuntime rt) => Results.Json(new
         {
             dataDirectory = rt.Options.Mode == AppMode.Local ? paths.Root : "(container volume)",
             databaseBytes = SizeOf(paths.DatabaseFile) + SizeOf(paths.DatabaseFile + "-wal") + SizeOf(paths.DatabaseFile + "-shm"),
@@ -219,7 +226,7 @@ public static class Endpoints
             audit = audit.Recent(200),
         }));
 
-        api.MapPost("/maintenance/clean-temp", (HttpContext ctx, AppPaths paths, AuditLog audit, ImportTracker tracker) =>
+        admin.MapPost("/maintenance/clean-temp", (HttpContext ctx, AppPaths paths, AuditLog audit, ImportTracker tracker) =>
         {
             if (tracker.Active > 0) return Results.Conflict(new { error = "busy", message = "An import is in progress. Try again when it has finished." });
             var remaining = paths.CleanTemp();
@@ -227,7 +234,7 @@ public static class Endpoints
             return Results.Json(new { remaining });
         });
 
-        api.MapPost("/maintenance/purge-index", (HttpContext ctx, ConfirmInput input, ScanCoordinator coordinator) =>
+        admin.MapPost("/maintenance/purge-index", (HttpContext ctx, ConfirmInput input, ScanCoordinator coordinator) =>
         {
             if (input.Confirm != "PURGE") return Bad("Type PURGE to confirm.");
             coordinator.CancelCurrent();
@@ -318,6 +325,10 @@ public static class Endpoints
     private static long DirectorySize(string dir) =>
         Directory.Exists(dir) ? new DirectoryInfo(dir).EnumerateFiles("*", SearchOption.AllDirectories).Sum(f => f.Length) : 0;
 }
+
+/// <summary>Marks endpoints that need the administrator role.</summary>
+[AttributeUsage(AttributeTargets.Method | AttributeTargets.Class)]
+public sealed class AdminOnlyAttribute : Attribute;
 
 /// <summary>Counts imports in progress so temporary files are not cleaned while in use.</summary>
 public sealed class ImportTracker

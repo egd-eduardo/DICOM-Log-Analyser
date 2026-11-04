@@ -58,7 +58,7 @@ jobs:
           docker run -d --name dla --network dla-ci -p 127.0.0.1:18080:8080 --read-only --tmpfs /tmp --cap-drop ALL \
             --security-opt no-new-privileges:true -v "$PWD/ci-logs:/sources/ci:ro" \
             -e DLA_PUBLIC_ORIGIN=https://dicomlogs.example.internal -e DLA_TRUSTED_PROXIES=172.31.0.1/32 \
-            -e DLA_ALLOWED_EMAIL_DOMAINS=example.org dicom-log-analyser:ci
+            -e DLA_ALLOWED_EMAIL_DOMAINS=example.org -e DLA_ADMIN_USERS=admin@example.org dicom-log-analyser:ci
           for i in $(seq 1 30); do [ "$(docker inspect -f '{{.State.Health.Status}}' dla)" = healthy ] && break; sleep 2; done
           test "$(docker inspect -f '{{.State.Health.Status}}' dla)" = healthy
           H='Host: dicomlogs.example.internal'

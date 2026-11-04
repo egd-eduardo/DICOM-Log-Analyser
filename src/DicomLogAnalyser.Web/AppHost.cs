@@ -93,8 +93,9 @@ public static class AppHost
 
         var app = builder.Build();
         app.UseMiddleware<ErrorHandlingMiddleware>();
-        app.UseMiddleware<SecurityMiddleware>();
+        // Routing first so the security middleware can see endpoint metadata (role requirements) before any binding.
         app.UseRouting();
+        app.UseMiddleware<SecurityMiddleware>();
         EmbeddedUi.Map(app);
         Endpoints.Map(app);
         return app;

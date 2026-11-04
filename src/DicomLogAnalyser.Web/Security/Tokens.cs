@@ -52,8 +52,11 @@ public sealed class LaunchTokenService(TimeProvider time)
     }
 }
 
-public sealed class BrowserSession(string id, string csrfToken, string identity, DateTimeOffset created)
+public sealed class BrowserSession(string id, string csrfToken, string identity, bool isAdmin, DateTimeOffset created)
 {
+    /// <summary>Administrator (configure, import, export, delete) or viewer (overview, search, event detail).</summary>
+    public bool IsAdmin { get; } = isAdmin;
+
     public string Id { get; } = id;
     public string CsrfToken { get; } = csrfToken;
     public string Identity { get; } = identity;
@@ -68,7 +71,7 @@ public sealed class SessionService(TimeProvider time, TimeSpan idleTimeout)
     private const int MaxSessions = 256;
     private readonly ConcurrentDictionary<string, BrowserSession> _sessions = new(StringComparer.Ordinal);
 
-    public BrowserSession Create(string identity)
+    public BrowserSession Create(string identity, bool isAdmin)
     {
         Purge();
         while (_sessions.Count >= MaxSessions)
@@ -77,7 +80,7 @@ public sealed class SessionService(TimeProvider time, TimeSpan idleTimeout)
             _sessions.TryRemove(oldest.Id, out _);
         }
 
-        var session = new BrowserSession(Tokens.NewToken(), Tokens.NewToken(), identity, time.GetUtcNow());
+        var session = new BrowserSession(Tokens.NewToken(), Tokens.NewToken(), identity, isAdmin, time.GetUtcNow());
         _sessions[session.Id] = session;
         return session;
     }

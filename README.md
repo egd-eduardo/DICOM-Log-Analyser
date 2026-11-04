@@ -157,7 +157,18 @@ are stored read-only under the data folder and indexed. Delete the zip from the 
 * A TLS certificate for the host name, issued by your organisation's CA.
 
 There are **no application-managed passwords and no anonymous mode**. The analyser refuses to start in central mode
-unless it knows the public HTTPS origin, the trusted proxy address and an allow list of users or e-mail domains.
+unless it knows the public HTTPS origin, the trusted proxy address, an allow list of users or e-mail domains and at
+least one administrator.
+
+### Roles
+
+| Role | Can do | Who |
+|---|---|---|
+| Viewer | Overview, search, event details with original evidence. Source folder paths are hidden. | Every allowed user in central mode |
+| Administrator | Everything else: add/edit/delete sources, scan, import bundles, CSV export, maintenance, purge, activity record | The person using local mode; in central mode only the addresses in `ADMIN_USERS` (`DLA_ADMIN_USERS`) |
+
+CSV export is administrator-only because it is a bulk extraction of PHI. Refused attempts are recorded in the activity
+record. Roles are checked by the analyser before a request is processed, in addition to the proxy's sign-in.
 
 ### Architecture
 
@@ -174,7 +185,7 @@ browser ──HTTPS──> access-proxy (oauth2-proxy v7.15.5: TLS, OIDC sign-in
 
 ```bash
 cd deploy/docker
-cp .env.example .env            # then edit PUBLIC_ORIGIN, OIDC_*, ALLOWED_* (see comments in the file)
+cp .env.example .env            # then edit PUBLIC_ORIGIN, OIDC_*, ALLOWED_*, ADMIN_USERS (see comments in the file)
 mkdir -m 700 secrets            # put tls.crt, tls.key, oidc_client_secret, cookie_secret, allowed-emails.txt here
 ```
 

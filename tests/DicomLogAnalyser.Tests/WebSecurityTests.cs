@@ -195,6 +195,7 @@ public sealed class ServerModeTests : IAsyncLifetime
             PublicOrigin = new Uri("https://dicomlogs.example.internal"),
             TrustedProxies = [System.Net.IPNetwork.Parse(trusted)],
             AllowedEmailDomains = new HashSet<string>(["example.org"], StringComparer.OrdinalIgnoreCase),
+            AdminUsers = new HashSet<string>(["admin@example.org"], StringComparer.OrdinalIgnoreCase),
             SourceRoots = [_temp.Sub("sources")],
         };
         _app = AppHost.Build(options, logging: l => l.ClearProviders());
@@ -252,6 +253,74 @@ public sealed class ServerModeTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
         using var health = await Get("/healthz", null);
         Assert.Equal(HttpStatusCode.OK, health.StatusCode);
+    }
+
+    private async Task<HttpResponseMessage> Send(HttpMethod method, string path, string identity, object? body = null)
+    {
+        using var first = await Get("/api/session", identity);
+        var cookie = first.Headers.GetValues("Set-Cookie").Single().Split(';')[0];
+        var csrf = (await first.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("csrfToken").GetString()!;
+        var req = new HttpRequestMessage(method, $"http://127.0.0.1:{_port}{path}");
+        req.Headers.Host = "dicomlogs.example.internal";
+        req.Headers.Add("X-Forwarded-Email", identity);
+        req.Headers.Add("Cookie", cookie);
+        if (method != HttpMethod.Get)
+        {
+            req.Headers.Add("Origin", "https://dicomlogs.example.internal");
+            req.Headers.Add(SecurityMiddleware.CsrfHeader, csrf);
+            req.Content = JsonContent.Create(body ?? new { confirm = "no", path = "/x", label = "x" });
+        }
+
+        return await _http.SendAsync(req);
+    }
+
+    [Theory]
+    [InlineData("POST", "/api/scan")]
+    [InlineData("POST", "/api/scan/cancel")]
+    [InlineData("POST", "/api/sources")]
+    [InlineData("POST", "/api/sources/validate")]
+    [InlineData("PUT", "/api/sources/1")]
+    [InlineData("DELETE", "/api/sources/1")]
+    [InlineData("POST", "/api/bundles?label=x")]
+    [InlineData("GET", "/api/export.csv")]
+    [InlineData("GET", "/api/maintenance")]
+    [InlineData("POST", "/api/maintenance/clean-temp")]
+    [InlineData("POST", "/api/maintenance/purge-index")]
+    public async Task Viewers_cannot_change_export_or_administer(string method, string path)
+    {
+        await Start("127.0.0.1/32");
+        using var res = await Send(new HttpMethod(method), path, "viewer@example.org");
+        Assert.Equal(HttpStatusCode.Forbidden, res.StatusCode);
+        Assert.Equal("admin_required", (await res.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("error").GetString());
+        var audit = _app.Services.GetRequiredService<DicomLogAnalyser.Core.Diagnostics.AuditLog>().Recent(5);
+        Assert.Contains(audit, a => a.Action == "access_denied" && a.Actor == "viewer@example.org");
+    }
+
+    [Fact]
+    public async Task Viewers_can_search_and_see_sources_without_paths_admins_can_administer()
+    {
+        await Start("127.0.0.1/32");
+        _app.Services.GetRequiredService<DicomLogAnalyser.Core.Sources.SourceRepository>().Add(new DicomLogAnalyser.Core.Sources.SourceDefinition
+        {
+            Label = "Gateway",
+            Kind = "folder",
+            Path = "/sources/secret-share-name",
+        });
+        using (var s = await Get("/api/session", "viewer@example.org"))
+            Assert.Equal("viewer", (await s.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("role").GetString());
+        using (var search = await Send(HttpMethod.Get, "/api/search?q=anything", "viewer@example.org")) Assert.Equal(HttpStatusCode.OK, search.StatusCode);
+        using (var ov = await Send(HttpMethod.Get, "/api/overview", "viewer@example.org")) Assert.Equal(HttpStatusCode.OK, ov.StatusCode);
+        using (var src = await Send(HttpMethod.Get, "/api/sources", "viewer@example.org"))
+        {
+            var body = await src.Content.ReadAsStringAsync();
+            Assert.Contains("Gateway", body, StringComparison.Ordinal);
+            Assert.DoesNotContain("secret-share-name", body, StringComparison.Ordinal);
+        }
+
+        using (var src = await Send(HttpMethod.Get, "/api/sources", "admin@example.org"))
+            Assert.Contains("secret-share-name", await src.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        using (var scan = await Send(HttpMethod.Post, "/api/scan", "admin@example.org", new { })) Assert.Equal(HttpStatusCode.Accepted, scan.StatusCode);
+        using (var m = await Send(HttpMethod.Get, "/api/maintenance", "admin@example.org")) Assert.Equal(HttpStatusCode.OK, m.StatusCode);
     }
 
     [Fact]

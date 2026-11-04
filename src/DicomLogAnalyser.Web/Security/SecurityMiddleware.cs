@@ -1,5 +1,8 @@
 using System.Net;
 
+using DicomLogAnalyser.Core.Diagnostics;
+using DicomLogAnalyser.Web.Api;
+
 namespace DicomLogAnalyser.Web.Security;
 
 /// <summary>
@@ -13,7 +16,8 @@ namespace DicomLogAnalyser.Web.Security;
 /// <item>State-changing API calls need the per-session CSRF token and an exact Origin.</item>
 /// </list>
 /// </summary>
-public sealed class SecurityMiddleware(RequestDelegate next, AppRuntime runtime, SessionService sessions, LaunchTokenService launchTokens, ILogger<SecurityMiddleware> logger)
+public sealed class SecurityMiddleware(RequestDelegate next, AppRuntime runtime, SessionService sessions, LaunchTokenService launchTokens, AuditLog audit,
+    ILogger<SecurityMiddleware> logger)
 {
     public const string CsrfHeader = "X-CSRF-Token";
     public const string LocalCookie = "dla_session";
@@ -152,13 +156,25 @@ public sealed class SecurityMiddleware(RequestDelegate next, AppRuntime runtime,
             return;
         }
 
+        // Role check before any request body is read or bound.
+        if (!session.IsAdmin && context.GetEndpoint()?.Metadata.GetMetadata<AdminOnlyAttribute>() is not null)
+        {
+            audit.Write(session.Identity, "access_denied", new Dictionary<string, object?>
+            {
+                ["method"] = request.Method,
+                ["endpoint"] = (context.GetEndpoint() as Microsoft.AspNetCore.Routing.RouteEndpoint)?.RoutePattern.RawText,
+            });
+            await Reject(context, StatusCodes.Status403Forbidden, "admin_required").ConfigureAwait(false);
+            return;
+        }
+
         context.Items[SessionItem] = session;
         await next(context).ConfigureAwait(false);
     }
 
     private BrowserSession StartSession(HttpContext context, string identity)
     {
-        var session = sessions.Create(identity);
+        var session = sessions.Create(identity, runtime.Options.IsAdmin(identity));
         context.Response.Cookies.Append(CookieName, session.Id, new CookieOptions
         {
             HttpOnly = true,

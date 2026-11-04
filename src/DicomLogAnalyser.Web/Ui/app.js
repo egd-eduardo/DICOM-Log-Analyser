@@ -2,7 +2,7 @@
 // DICOM Log Analyser UI. Plain JavaScript, no external libraries or network calls other than this application's API.
 // All log content is inserted with textContent (never as HTML).
 
-/** @type {{csrfToken: string, mode: string, identity: string, version: string, platform: string, sourceRoots: string[], maxUploadMb: number, scanIntervalMinutes: number, formats: {id: string, name: string}[]} | null} */
+/** @type {{csrfToken: string, mode: string, role: string, identity: string, version: string, platform: string, sourceRoots: string[], maxUploadMb: number, scanIntervalMinutes: number, formats: {id: string, name: string}[]} | null} */
 let session = null;
 /** @type {any[]} */
 let sourcesCache = [];
@@ -158,6 +158,9 @@ function showSignIn() {
   for (const p of document.querySelectorAll('.panel')) p.classList.add('hidden');
   $('tab-signin').classList.remove('hidden');
 }
+
+/** Administrators configure, import, export and delete; viewers search and read. */
+function isAdmin() { return session?.role === 'admin'; }
 
 // ---------- Formatting ----------
 
@@ -337,7 +340,7 @@ async function runSearch(append) {
   const exp = $('export');
   params.delete('limit'); params.delete('cursor');
   exp.href = '/api/export.csv?' + params.toString();
-  exp.classList.toggle('hidden', res.matchCount === 0);
+  exp.classList.toggle('hidden', res.matchCount === 0 || !isAdmin());
   if (!append) renderSummary(res, params.has('q'));
 }
 
@@ -582,7 +585,7 @@ async function loadMaintenance() {
   const about = $('m-about'); about.replaceChildren();
   if (session) {
     about.append(el('li', '', `Version ${session.version}, ${session.mode === 'server' ? 'central mode (identity from the access proxy)' : 'local mode (this computer only)'}.`));
-    about.append(el('li', '', 'Signed in as ' + session.identity + '.'));
+    about.append(el('li', '', 'Signed in as ' + session.identity + (isAdmin() ? ' (administrator).' : ' (viewer).')));
     if (session.sourceRoots.length) about.append(el('li', '', 'Folder sources must be inside: ' + session.sourceRoots.join(', ')));
     about.append(el('li', '', session.scanIntervalMinutes ? `Automatic scan every ${session.scanIntervalMinutes} minutes.` : 'Automatic scans are off; scan from the Sources page.'));
   }
@@ -633,6 +636,11 @@ async function start() {
   try {
     session = await api('/api/session');
   } catch { return; }
+  if (!isAdmin()) {
+    for (const tab of ['sources', 'import', 'maintenance']) document.querySelector(`#tabs button[data-tab="${tab}"]`)?.classList.add('hidden');
+    const note = el('p', 'muted small', 'You have read-only access (viewer): overview, search and event details. Adding sources, importing, exporting and deleting need the administrator role.');
+    $('tab-overview').insertBefore(note, $('ov-cards'));
+  }
   const fmt = $('s-format');
   for (const f of session.formats) fmt.append(new Option(f.name, f.id));
   const tzl = $('tz-list');
