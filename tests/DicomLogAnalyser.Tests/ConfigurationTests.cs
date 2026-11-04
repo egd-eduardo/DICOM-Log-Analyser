@@ -14,8 +14,9 @@ public class ConfigurationTests
         ["DLA_PUBLIC_ORIGIN"] = "https://dicomlogs.example.internal",
         ["DLA_TRUSTED_PROXIES"] = "172.30.0.0/24",
         ["DLA_ALLOWED_EMAIL_DOMAINS"] = "example.org",
-        ["DLA_SOURCE_ROOTS"] = "/sources",
-        ["DLA_DATA_DIR"] = "/data",
+        // An absolute path on the platform running the tests (a container uses /sources).
+        ["DLA_SOURCE_ROOTS"] = OperatingSystem.IsWindows() ? @"C:\sources" : "/sources",
+        ["DLA_DATA_DIR"] = OperatingSystem.IsWindows() ? @"C:\data" : "/data",
     };
 
     [Fact]
@@ -107,6 +108,8 @@ public class ConfigurationTests
     [Fact]
     public void Mount_info_detects_read_only_mounts()
     {
+        // /proc/self/mountinfo exists only on Linux (the container platform); the check is not used elsewhere.
+        if (!OperatingSystem.IsLinux()) return;
         var lines = new[]
         {
             "22 1 0:21 / / rw,relatime - overlay overlay rw",
