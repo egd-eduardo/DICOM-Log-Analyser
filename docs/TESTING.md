@@ -78,6 +78,7 @@ the logged SQLite code identifies the cause.
 |---|---|---|
 | [1](https://github.com/egd-eduardo/DICOM-Log-Analyser/actions/runs/41914713868) | `0675431` | Linux, macOS (Apple silicon) and Linux package jobs passed. Windows: 2 of 101 tests failed because they used Linux-style paths (`/sources`, `/proc/self/mountinfo`); the product behaviour was correct. |
 | [2](https://github.com/egd-eduardo/DICOM-Log-Analyser/actions/runs/41916306816) | `7525124` | All four jobs passed. On Windows, macOS and Linux the self-contained package was built, started, answered 401 without a session and was stopped; on Windows `Get-NetTCPConnection` confirmed a loopback-only listener. Linux: full check script, container build, refusal without identity settings, hardened container healthy with 401/403/200, Compose file valid. |
+| [3](https://github.com/egd-eduardo/DICOM-Log-Analyser/actions/runs/41918125944) | `173a7af` | All four jobs passed (118 tests on Windows, macOS and Linux), including the container probe with `DLA_ADMIN_USERS` and the Compose check with the updated `.env.example`. |
 
 ## Not run here (needs the target environments)
 
