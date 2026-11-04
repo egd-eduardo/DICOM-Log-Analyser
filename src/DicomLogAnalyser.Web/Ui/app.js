@@ -224,6 +224,7 @@ async function loadOverview() {
     if (!s.enabled) gaps.push(`"${s.label}" is disabled; its events are not updated.`);
     if (!s.lastScanUtc) gaps.push(`"${s.label}" has not been scanned yet.`);
     else if (s.lastScanStatus === 'unreachable') gaps.push(`"${s.label}" was unreachable at the last scan (${when(s.lastScanUtc)}). Events after its last successful scan are missing.`);
+    else if (s.lastScanStatus === 'failed') gaps.push(`"${s.label}": the last scan (${when(s.lastScanUtc)}) stopped with an error. ${s.lastScanMessage || ''}`);
     if (s.hasUnzonedTimes) gaps.push(`"${s.label}" has local times without a time zone. Set its time zone so its events line up with other sources.`);
     if (s.problemFiles > 0) gaps.push(`"${s.label}" has ${s.problemFiles} file(s) that are unreadable, missing or unrecognised.`);
   }
@@ -270,7 +271,7 @@ async function loadOverview() {
 /** @param {string | null} status @param {string | null} message */
 function statusCell(status, message) {
   const s = status || 'not scanned';
-  const cls = s === 'ok' ? 'ok-text' : (s === 'unreachable' || s === 'unreadable') ? 'err-text' : 'warn-text';
+  const cls = s === 'ok' ? 'ok-text' : (s === 'unreachable' || s === 'unreadable' || s === 'failed') ? 'err-text' : 'warn-text';
   const span = el('span', cls, s);
   if (message) span.title = message;
   return span;

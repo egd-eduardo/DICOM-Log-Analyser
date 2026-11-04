@@ -107,8 +107,15 @@ public sealed class Ingestor(IndexDatabase db, SourceRepository sources, TimePro
         db.MarkChanged();
         if (summary.EventsAdded > 0)
         {
-            using var c = db.Open();
-            IndexDatabase.Exec(c, "PRAGMA optimize;");
+            try
+            {
+                using var c = db.Open();
+                IndexDatabase.Exec(c, "PRAGMA optimize;");
+            }
+            catch (SqliteException)
+            {
+                // Query-planner statistics are an optimisation only; the scan itself has completed.
+            }
         }
 
         return summary;
@@ -132,54 +139,71 @@ public sealed class Ingestor(IndexDatabase db, SourceRepository sources, TimePro
             return;
         }
 
-        using (stream)
+        try
         {
-            var size = stream.Length;
-            var mtime = new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds();
-            var reset = false;
-            if (state.FingerprintLength > 0)
-            {
-                if (size < state.CommittedOffset || size < state.FingerprintLength) reset = true;
-                else if (!Fingerprint(stream, state.FingerprintLength).AsSpan().SequenceEqual(state.FingerprintHash)) reset = true;
-            }
+            ProcessOpenFile(source, state, file, stream, tz, hint, summary, progress, done, total, ct);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The file was truncated, rotated or locked while it was being read. Work committed so far is kept and
+            // the next scan continues from the last committed offset (or re-indexes the file if it was replaced).
+            summary.FilesUnreadable++;
+            SetStatus(state.Id, "unreadable", "The file changed or became unreadable while it was being read; it is retried at the next scan.");
+        }
+        finally
+        {
+            stream.Dispose();
+        }
+    }
 
-            if (!reset && state.FingerprintLength > 0 && size == state.Size && mtime == state.Mtime && state.Status is "ok" or "missing")
-            {
-                if (state.Status == "missing") SetStatus(state.Id, "ok", null);
-                return;
-            }
+    private void ProcessOpenFile(SourceDefinition source, FileState state, FileInfo file, FileStream stream, TimeZoneInfo? tz, ILogFormat? hint, ScanSummary summary,
+        IProgress<ScanProgress>? progress, int done, int total, CancellationToken ct)
+    {
+        var size = stream.Length;
+        var mtime = new DateTimeOffset(file.LastWriteTimeUtc).ToUnixTimeMilliseconds();
+        var reset = false;
+        if (state.FingerprintLength > 0)
+        {
+            if (size < state.CommittedOffset || size < state.FingerprintLength) reset = true;
+            else if (!Fingerprint(stream, state.FingerprintLength).AsSpan().SequenceEqual(state.FingerprintHash)) reset = true;
+        }
 
-            if (!reset && state.Status == "unrecognised" && size == state.Size && mtime == state.Mtime)
-            {
-                summary.FilesUnrecognised++;
-                return;
-            }
+        if (!reset && state.FingerprintLength > 0 && size == state.Size && mtime == state.Mtime && state.Status is "ok" or "missing")
+        {
+            if (state.Status == "missing") SetStatus(state.Id, "ok", null);
+            return;
+        }
 
-            if (reset) summary.FilesReset++;
-            var format = reset || state.Format is null ? null : FormatRegistry.Find(state.Format);
-            var offset = reset ? 0 : state.CommittedOffset;
-            var line = reset ? 1 : state.CommittedLine;
+        if (!reset && state.Status == "unrecognised" && size == state.Size && mtime == state.Mtime)
+        {
+            summary.FilesUnrecognised++;
+            return;
+        }
+
+        if (reset) summary.FilesReset++;
+        var format = reset || state.Format is null ? null : FormatRegistry.Find(state.Format);
+        var offset = reset ? 0 : state.CommittedOffset;
+        var line = reset ? 1 : state.CommittedLine;
+        if (format is null)
+        {
+            offset = 0;
+            line = 1;
+            format = hint ?? Sniff(stream);
             if (format is null)
             {
-                offset = 0;
-                line = 1;
-                format = hint ?? Sniff(stream);
-                if (format is null)
-                {
-                    summary.FilesUnrecognised++;
-                    ClearFile(state.Id);
-                    var fpLen = (int)Math.Min(size, FingerprintBytes);
-                    SaveFileState(state.Id, null, size, mtime, fpLen, Fingerprint(stream, fpLen), 0, 1, "unrecognised",
-                        size == 0 ? "The file is empty." : "No line matched a supported log format (B3DWEB Gateway, DICOM Router) in the first lines of the file.");
-                    return;
-                }
+                summary.FilesUnrecognised++;
+                ClearFile(state.Id);
+                var fpLen = (int)Math.Min(size, FingerprintBytes);
+                SaveFileState(state.Id, null, size, mtime, fpLen, Fingerprint(stream, fpLen), 0, 1, "unrecognised",
+                    size == 0 ? "The file is empty." : "No line matched a supported log format (B3DWEB Gateway, DICOM Router) in the first lines of the file.");
+                return;
             }
-
-            summary.FilesChanged++;
-            var fingerprintLength = (int)Math.Min(size, FingerprintBytes);
-            var fingerprint = Fingerprint(stream, fingerprintLength);
-            IndexFrom(source, state.Id, stream, format, tz, offset, line, size, mtime, fingerprintLength, fingerprint, reset || offset == 0, summary, progress, done, total, ct);
         }
+
+        summary.FilesChanged++;
+        var fingerprintLength = (int)Math.Min(size, FingerprintBytes);
+        var fingerprint = Fingerprint(stream, fingerprintLength);
+        IndexFrom(source, state.Id, stream, format, tz, offset, line, size, mtime, fingerprintLength, fingerprint, reset || offset == 0, summary, progress, done, total, ct);
     }
 
     private void IndexFrom(SourceDefinition source, long fileId, FileStream stream, ILogFormat format, TimeZoneInfo? tz, long offset, long line, long size, long mtime,
@@ -200,61 +224,69 @@ public sealed class Ingestor(IndexDatabase db, SourceRepository sources, TimePro
 
             long lastTs = fromStart ? 0 : IndexDatabase.Scalar<long>(c, "SELECT sort_ts FROM events WHERE file_id=$f AND byte_start < $o ORDER BY byte_start DESC LIMIT 1", tx, ("$f", fileId), ("$o", offset));
             var insert = new EventInserter(c, tx);
-            var assembler = new RecordAssembler(format, tz);
-            var startPos = offset;
-            using var reader = new LineReader(stream, offset, line);
-            long pendingSince = 0;
-            long lastLine = line - 1;
-            while (reader.ReadLine() is { } l)
+            try
             {
-                lastLine = l.LineNumber;
-                var closed = assembler.Add(l);
-                if (closed is null) continue;
-                lastTs = Write(insert, closed, source.Id, fileId, lastTs);
-                summary.EventsAdded++;
-                if (++pendingSince < CheckpointEvents) continue;
+                var assembler = new RecordAssembler(format, tz);
+                var startPos = offset;
+                using var reader = new LineReader(stream, offset, line);
+                long pendingSince = 0;
+                long lastLine = line - 1;
+                while (reader.ReadLine() is { } l)
+                {
+                    lastLine = l.LineNumber;
+                    var closed = assembler.Add(l);
+                    if (closed is null) continue;
+                    lastTs = Write(insert, closed, source.Id, fileId, lastTs);
+                    summary.EventsAdded++;
+                    if (++pendingSince < CheckpointEvents) continue;
 
-                // Checkpoint: everything before the open record is final.
-                var open = assembler.Pending;
-                var co = open?.ByteStart ?? reader.Position;
-                var cl = open?.LineStart ?? lastLine + 1;
-                SaveFileState(fileId, format.Id, size, mtime, fpLen, fp, co, cl, "partial", "Indexing in progress.", c, tx);
+                    // Checkpoint: everything before the open record is final.
+                    var open = assembler.Pending;
+                    var co = open?.ByteStart ?? reader.Position;
+                    var cl = open?.LineStart ?? lastLine + 1;
+                    SaveFileState(fileId, format.Id, size, mtime, fpLen, fp, co, cl, "partial", "Indexing in progress.", c, tx);
+                    tx.Commit();
+                    tx.Dispose();
+                    ct.ThrowIfCancellationRequested();
+                    tx = c.BeginTransaction();
+                    insert.Dispose();
+                    insert = new EventInserter(c, tx);
+                    pendingSince = 0;
+                    progress?.Report(new ScanProgress(source.Label, done, total, summary.BytesRead + (reader.Position - startPos), summary.EventsAdded));
+                }
+
+                var last = assembler.Close();
+                long committedOffset;
+                long committedLine;
+                if (last is not null)
+                {
+                    Write(insert, last, source.Id, fileId, lastTs);
+                    summary.EventsAdded++;
+                    committedOffset = last.ByteStart;
+                    committedLine = last.LineStart;
+                }
+                else
+                {
+                    committedOffset = reader.Position;
+                    committedLine = lastLine + 1;
+                }
+
+                summary.BytesRead += reader.Position - startPos;
+                SaveFileState(fileId, format.Id, reader.Position, mtime, fpLen, fp, committedOffset, committedLine, "ok", null, c, tx);
+                using (var upd = c.CreateCommand())
+                {
+                    upd.Transaction = tx;
+                    upd.CommandText = "UPDATE files SET unparsed_lines=(SELECT ifnull(sum(line_end-line_start+1),0) FROM events WHERE file_id=$f AND kind=1) WHERE id=$f";
+                    upd.Parameters.AddWithValue("$f", fileId);
+                    upd.ExecuteNonQuery();
+                }
+
                 tx.Commit();
-                tx.Dispose();
-                ct.ThrowIfCancellationRequested();
-                tx = c.BeginTransaction();
-                insert = new EventInserter(c, tx);
-                pendingSince = 0;
-                progress?.Report(new ScanProgress(source.Label, done, total, summary.BytesRead + (reader.Position - startPos), summary.EventsAdded));
             }
-
-            var last = assembler.Close();
-            long committedOffset;
-            long committedLine;
-            if (last is not null)
+            finally
             {
-                Write(insert, last, source.Id, fileId, lastTs);
-                summary.EventsAdded++;
-                committedOffset = last.ByteStart;
-                committedLine = last.LineStart;
+                insert.Dispose();
             }
-            else
-            {
-                committedOffset = reader.Position;
-                committedLine = lastLine + 1;
-            }
-
-            summary.BytesRead += reader.Position - startPos;
-            SaveFileState(fileId, format.Id, reader.Position, mtime, fpLen, fp, committedOffset, committedLine, "ok", null, c, tx);
-            using (var upd = c.CreateCommand())
-            {
-                upd.Transaction = tx;
-                upd.CommandText = "UPDATE files SET unparsed_lines=(SELECT ifnull(sum(line_end-line_start+1),0) FROM events WHERE file_id=$f AND kind=1) WHERE id=$f";
-                upd.Parameters.AddWithValue("$f", fileId);
-                upd.ExecuteNonQuery();
-            }
-
-            tx.Commit();
         }
         finally
         {
@@ -443,7 +475,7 @@ public sealed class Ingestor(IndexDatabase db, SourceRepository sources, TimePro
     }
 
     /// <summary>Prepared insert statement reused for every event of a transaction.</summary>
-    private sealed class EventInserter
+    private sealed class EventInserter : IDisposable
     {
         private readonly SqliteCommand _cmd;
         private readonly SqliteParameter[] _p;
@@ -492,5 +524,7 @@ public sealed class Ingestor(IndexDatabase db, SourceRepository sources, TimePro
             _p[17].Value = e.HasException ? 1 : 0;
             _cmd.ExecuteNonQuery();
         }
+
+        public void Dispose() => _cmd.Dispose();
     }
 }

@@ -134,13 +134,12 @@ public static class Endpoints
                 FormatHint = string.IsNullOrWhiteSpace(input.FormatHint) ? existing.FormatHint : input.FormatHint,
             };
             var needsReindex = updated.TimeZone != existing.TimeZone || updated.FormatHint != existing.FormatHint;
-            if (needsReindex && coordinator.Status.State != "idle")
-                return Results.Conflict(new { error = "busy", message = "A scan is running. Wait until it finishes, then save again." });
             repo.Update(updated);
-            if (needsReindex) repo.ResetIndex(id);
             var actor = SecurityMiddleware.CurrentSession(ctx).Identity;
             audit.Write(actor, "source_updated", new Dictionary<string, object?> { ["sourceId"] = id, ["reindex"] = needsReindex });
-            if (needsReindex && updated.Enabled) coordinator.EnqueueScan(actor, [id]);
+            // The index is cleared by the background queue, never while a scan of the same source is writing to it.
+            if (needsReindex && !coordinator.EnqueueReindex(actor, id))
+                return Results.Json(new { error = "busy", message = "The work queue is full. Save again in a moment." }, statusCode: StatusCodes.Status503ServiceUnavailable);
             return Results.Json(new { id, reindexed = needsReindex });
         });
 

@@ -180,6 +180,7 @@ public sealed class SearchService(IndexDatabase db)
             if (r.GetInt64(2) == 0) notes.Add($"\"{label}\" is disabled and was not scanned recently; its events may be outdated.");
             if (r.IsDBNull(4)) notes.Add($"\"{label}\" has never been scanned, so none of its events are searchable yet.");
             else if (!r.IsDBNull(3) && r.GetString(3) == "unreachable") notes.Add($"\"{label}\" was unreachable at its last scan; recent events from it may be missing.");
+            else if (!r.IsDBNull(3) && r.GetString(3) == "failed") notes.Add($"\"{label}\": the last scan stopped with an error; events after that point may be missing.");
             if (r.GetInt64(7) > 0) notes.Add($"\"{label}\" has {r.GetInt64(7)} file(s) that are unreadable, missing or unrecognised.");
             if (!r.IsDBNull(9)) notes.Add($"\"{label}\" logs local times without a time zone and none is configured: its times are shown as written and may be offset from other sources.");
             if (!r.IsDBNull(5) && (request.FromMs is not null || request.ToMs is not null))

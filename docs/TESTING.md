@@ -13,7 +13,7 @@ approved environment.
 | Locked restore | `dotnet restore --locked-mode` (lock files must match) |
 | Formatting and code style | `dotnet format --verify-no-changes` (`.editorconfig`) |
 | Build with analyzers | `dotnet build -c Release`, `AnalysisLevel=latest-recommended`, warnings as errors, NuGet Audit |
-| Unit and integration tests | xUnit, 98 tests (parsers, line reader, assembler, ingestion, rotation/truncation, search, query safety, bundle import attacks, path validation, configuration, HTTP security in both modes, end-to-end API) |
+| Unit and integration tests | xUnit, 101 tests (parsers, line reader, assembler, ingestion, rotation/truncation, search, query safety, bundle import attacks, path validation, configuration, HTTP security in both modes, end-to-end API, background queue failure isolation) |
 | Dependency vulnerabilities | `dotnet list package --vulnerable --include-transitive`; `npm audit` for the UI type-check tool |
 | UI type check | TypeScript 7.0.2 `checkJs` over `Ui/app.js` |
 
@@ -28,7 +28,7 @@ These checks were actually run; nothing below is assumed.
 |---|---|
 | Secret/PHI scan | Passed (83 files). A planted file with a real-looking UID, a non-synthetic name, a public IP, a private-key header and a password was correctly rejected (5 findings). |
 | Locked restore, format, build | Passed, no warnings |
-| Tests | 98 passed, 0 failed |
+| Tests | 101 passed, 0 failed |
 | Vulnerable packages (NuGet, transitive) | None reported |
 | npm audit (TypeScript) | 0 vulnerabilities |
 | UI type check | Passed, after fixing seven type errors it found |
@@ -40,13 +40,36 @@ These checks were actually run; nothing below is assumed.
 | Volume test | See [ARCHITECTURE.md](ARCHITECTURE.md#measured-performance-synthetic-data-this-build-environment): 300 MB, 1.78 million events in 105 s; identifier searches under 10 ms |
 | Concurrency stress | Three rounds of scans (30 MB plus fixtures) while six threads searched, read the overview and sources, and new sources were added: 0 errors |
 
-### Observed issue
+### Intermittent scan failure (investigated 2026-11-04)
 
-During one of nine browser runs, the scan of the second source failed with a `SqliteException` that could not be
-reproduced in seven further runs or in the concurrency stress test. Because routine diagnostics deliberately omit
-exception messages, the cause was not captured. Changes made: diagnostics now include the numeric SQLite result code
-(no data), and a scan that meets a transient lock (SQLITE_BUSY/LOCKED) is retried once from its committed offsets.
-If the failure recurs, the logged code identifies the cause. This remains an open item.
+**Symptom.** In one of nine browser runs, the scan of the second source stopped with a `SqliteException`. Because
+routine diagnostics omit exception messages, the cause was not captured, and the source was then shown as "never
+scanned".
+
+**Investigation.** The failure could not be reproduced in 27 further runs of the same browser flow in Chromium,
+40 timed HTTP replays, or a concurrency stress test. Transactions were confirmed empirically to start as
+`BEGIN IMMEDIATE`, so lock waits are honoured. Disk space was ample. The exact trigger therefore remains unknown.
+
+**Defects found and fixed during the review**, any of which could produce the same symptom:
+
+1. An error in one source aborted the whole scan, and the failing source recorded no status. Each source is now scanned
+   in isolation; a failure is recorded on that source as `failed` with a reference, shown in the overview and in
+   search coverage notes, and the other sources are still scanned.
+2. A read error *after* a file was opened (truncated or rotated mid-read) aborted the whole source. It is now caught
+   per file; the file is marked unreadable and retried at the next scan from its last committed offset.
+3. Changing a source's time zone or format cleared its index from the web request, which could race a scan starting at
+   that moment (constraint errors). The reset now runs in the background queue, after any running work.
+4. Prepared insert statements were not disposed, and the optional `PRAGMA optimize` step could fail a completed scan.
+   Both are fixed.
+
+Diagnostics now include the numeric SQLite result code, and a transient lock (SQLITE_BUSY/LOCKED) is retried once.
+
+**Verification after the fixes.** `scripts/check.sh` passed (101 tests, including new tests for failure isolation,
+the transient-lock retry and the queued re-index behind a running scan); 10 browser runs and 20 HTTP replays showed
+no failures; the rebuilt container re-indexed a source after a time-zone change saved while scans were queued.
+
+**Remaining.** If the original trigger recurs, it now affects only the one source, is visible in the interface, and
+the logged SQLite code identifies the cause.
 
 ## Not run here (needs the target environments)
 

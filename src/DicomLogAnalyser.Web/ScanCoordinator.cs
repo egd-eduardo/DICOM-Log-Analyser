@@ -32,6 +32,11 @@ public sealed class ScanCoordinator(
 
     private sealed record PurgeWork(string Actor) : WorkItem(Actor);
 
+    private sealed record ReindexWork(string Actor, long SourceId) : WorkItem(Actor);
+
+    /// <summary>Test seam: replaces the ingestor call for one source.</summary>
+    internal Func<SourceDefinition, IProgress<ScanProgress>, CancellationToken, ScanSummary>? ScanOverride { get; set; }
+
     public ScanStatus Status
     {
         get
@@ -45,6 +50,9 @@ public sealed class ScanCoordinator(
     public bool EnqueueDelete(string actor, long sourceId) => Enqueue(new DeleteWork(actor, sourceId));
 
     public bool EnqueuePurge(string actor) => Enqueue(new PurgeWork(actor));
+
+    /// <summary>Clears a source's index and rescans it, after any running work (never concurrently with a scan).</summary>
+    public bool EnqueueReindex(string actor, long sourceId) => Enqueue(new ReindexWork(actor, sourceId));
 
     public void CancelCurrent()
     {
@@ -124,6 +132,18 @@ public sealed class ScanCoordinator(
                 audit.Write(delete.Actor, source.Kind == SourceKinds.Bundle ? "bundle_deleted" : "source_deleted", new Dictionary<string, object?> { ["sourceId"] = source.Id });
                 Finish("Source and its indexed events deleted" + (source.Kind == SourceKinds.Bundle ? ", including the imported files." : "."));
                 break;
+            case ReindexWork reindex:
+                Begin("Re-indexing source");
+                if (sources.Get(reindex.SourceId) is not { } target)
+                {
+                    Finish("The source no longer exists.");
+                    return;
+                }
+
+                sources.ResetIndex(target.Id);
+                if (target.Enabled) RunScan(new ScanWork(reindex.Actor, [target.Id]), ct);
+                else Finish("The source's index was cleared; enable it and scan to rebuild it.");
+                break;
             case PurgeWork purge:
                 Begin("Purging index");
                 db.PurgeEvents();
@@ -144,19 +164,7 @@ public sealed class ScanCoordinator(
         {
             ct.ThrowIfCancellationRequested();
             lock (_lock) _status = _status with { SourceLabel = source.Label, FilesDone = 0, FilesTotal = 0 };
-            ScanSummary summary;
-            try
-            {
-                summary = ingestor.Scan(source, progress, ct);
-            }
-            catch (Exception ex) when (SafeError.IsTransientStorageError(ex))
-            {
-                // Committed work is kept; the retry continues from the last committed offset of each file.
-                logger.LogWarning("Scan of source {SourceId} hit a transient storage lock ({Type}); retrying once.", source.Id, SafeError.Describe(ex));
-                ct.WaitHandle.WaitOne(TimeSpan.FromSeconds(2));
-                summary = ingestor.Scan(source, progress, ct);
-            }
-
+            var summary = ScanOne(source, progress, ct);
             totalEvents += summary.EventsAdded;
             outcomes.Add($"{source.Label}: {summary.Status} ({summary.EventsAdded.ToString("N0", CultureInfo.InvariantCulture)} events, {summary.FilesChanged} changed file(s))");
             audit.Write(work.Actor, "scan", new Dictionary<string, object?>
@@ -174,6 +182,46 @@ public sealed class ScanCoordinator(
         }
 
         Finish(list.Count == 0 ? "No enabled sources to scan." : string.Join(" · ", outcomes));
+    }
+
+    /// <summary>
+    /// Scans one source. A transient lock is retried once; any other error is recorded on that source (with a
+    /// reference and, for storage errors, the numeric SQLite code) and the remaining sources are still scanned.
+    /// </summary>
+    private ScanSummary ScanOne(SourceDefinition source, IProgress<ScanProgress> progress, CancellationToken ct)
+    {
+        ScanSummary Run() => ScanOverride is { } f ? f(source, progress, ct) : ingestor.Scan(source, progress, ct);
+        try
+        {
+            try
+            {
+                return Run();
+            }
+            catch (Exception ex) when (SafeError.IsTransientStorageError(ex))
+            {
+                // Committed work is kept; the retry continues from the last committed offset of each file.
+                logger.LogWarning("Scan of source {SourceId} hit a transient storage lock ({Type}); retrying once.", source.Id, SafeError.Describe(ex));
+                ct.WaitHandle.WaitOne(TimeSpan.FromSeconds(2));
+                ct.ThrowIfCancellationRequested();
+                return Run();
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            var reference = SafeError.NewReference();
+            logger.LogError("Scan of source {SourceId} failed: {Type} (ref {Reference}).", source.Id, SafeError.Describe(ex), reference);
+            var message = "The scan stopped with an unexpected error (reference " + reference + "). Events indexed before the error are kept; scan again to continue.";
+            try
+            {
+                sources.RecordScan(source.Id, "failed", message);
+            }
+            catch (Exception recordEx) when (recordEx is not OperationCanceledException)
+            {
+                logger.LogError("Could not record the failed scan of source {SourceId}: {Type}.", source.Id, SafeError.Describe(recordEx));
+            }
+
+            return new ScanSummary { Status = "failed", Message = message };
+        }
     }
 
     private void Begin(string operation)

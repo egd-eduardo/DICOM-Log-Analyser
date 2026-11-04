@@ -79,7 +79,10 @@ builder searches as an exact phrase.
 
 `ScanCoordinator` (a hosted background service) runs scans, source deletions and purges one at a time from a bounded
 queue, reports progress, supports cancellation and optional periodic scans (`DLA_SCAN_INTERVAL_MINUTES`). This keeps a
-single writer for SQLite while searches continue on separate read connections.
+single writer for SQLite while searches continue on separate read connections. Each source is scanned in isolation:
+an error is recorded on that source as `failed` (with a reference and, for storage errors, the numeric SQLite code)
+and the remaining sources are still scanned; a transient lock is retried once. Re-indexing after a time-zone or
+format change also runs in this queue, so it never overlaps a scan.
 
 ## Adding a log format
 
