@@ -246,6 +246,7 @@ async function loadOverview() {
     else if (s.lastScanStatus === 'unreachable') gaps.push(`"${s.label}" was unreachable at the last scan (${when(s.lastScanUtc)}). Events after its last successful scan are missing.`);
     else if (s.lastScanStatus === 'failed') gaps.push(`"${s.label}": the last scan (${when(s.lastScanUtc)}) stopped with an error. ${s.lastScanMessage || ''}`);
     if (s.hasUnzonedTimes) gaps.push(`"${s.label}" has local times without a time zone. Set its time zone so its events line up with other sources.`);
+    if (s.newFiles > 0) gaps.push(`"${s.label}" has ${s.newFiles} new file(s) that are not chosen for analysis. Choose them under Sources, Files (at most 5 days per folder).`);
     if (s.problemFiles > 0) gaps.push(`"${s.label}" has ${s.problemFiles} file(s) that are unreadable, missing or unrecognised.`);
   }
   const gapBox = $('ov-gaps');
@@ -486,6 +487,10 @@ function sourceActions(s) {
   scan.addEventListener('click', () => api('/api/scan', { method: 'POST', body: JSON.stringify({ sourceIds: [s.id] }) }).then(() => notify('Scan queued.', true)).catch((e) => notify(e.message)));
   wrap.append(scan);
   if (s.kind === 'folder') {
+    const files = el('button', 'ghost', 'Files'); files.type = 'button';
+    files.title = 'Choose which files are analysed (at most 5 days per folder)';
+    files.addEventListener('click', () => openChooser(s.id, s.label).catch((e) => notify(e.message)));
+    wrap.append(files);
     const edit = el('button', 'ghost', 'Edit'); edit.type = 'button';
     edit.addEventListener('click', () => editSource(s));
     wrap.append(edit);
@@ -534,6 +539,84 @@ function sourceBody() {
     label: $('s-label').value, path: $('s-path').value, enabled: $('s-enabled').checked, recursive: $('s-recursive').checked,
     includePatterns: $('s-patterns').value, timeZone: $('s-tz').value, formatHint: $('s-format').value, scanNow: true,
   };
+}
+
+// ---------- File chooser (at most 5 days of files per folder) ----------
+
+/** @type {{id: number, maxDays: number, files: any[]} | null} */
+let chooser = null;
+
+/** @param {string} d yyyy-MM-dd */
+const dayNumber = (d) => Math.round(Date.parse(d + 'T00:00:00Z') / 86400000);
+
+/** @param {number} id @param {string} label */
+async function openChooser(id, label) {
+  const data = await api('/api/sources/' + id + '/files');
+  chooser = { id, maxDays: data.maxDays, files: data.files };
+  $('ch-title').textContent = 'Files analysed for "' + label + '"';
+  $('ch-help').textContent = `Tick the files to analyse. Their last-modified dates (time zone ${data.timeZone}) must lie within ${data.maxDays} consecutive days. `
+    + 'Chosen files are read completely; unticking a file removes its events from the index. New files are not analysed until you tick them.'
+    + (data.selectionSaved ? '' : ' The latest days are pre-selected.') + (data.truncated ? ' Only the newest files are listed.' : '');
+  const tbody = $('ch-table').querySelector('tbody');
+  tbody.replaceChildren();
+  if (!data.files.length) {
+    const tr = el('tr'); const td = el('td', 'muted', 'No files found in this folder.'); td.colSpan = 5; tr.append(td); tbody.append(tr);
+  }
+  data.files.forEach((/** @type {any} */ f, /** @type {number} */ i) => {
+    const tr = el('tr');
+    const box = el('input'); box.type = 'checkbox'; box.checked = f.selected; box.dataset.index = String(i);
+    box.setAttribute('aria-label', 'Analyse ' + f.path);
+    box.addEventListener('change', () => { f.selected = box.checked; updateChooser(); });
+    const tdBox = el('td'); tdBox.append(box);
+    const status = el('td', f.selected ? 'ok-text' : f.isNew ? 'warn-text' : 'muted', '');
+    status.dataset.role = 'status';
+    tr.append(tdBox, el('td', 'file', f.path), el('td', 'time', new Date(f.modifiedUtc).toLocaleString('en-GB')), el('td', '', bytes(f.size)), status);
+    tbody.append(tr);
+  });
+  $('ch-result').textContent = '';
+  $('chooser').classList.remove('hidden');
+  updateChooser();
+  $('chooser').scrollIntoView({ behavior: 'smooth' });
+}
+
+function updateChooser() {
+  if (!chooser) return;
+  const chosen = chooser.files.filter((f) => f.selected);
+  const days = chosen.length ? Math.max(...chosen.map((f) => dayNumber(f.modifiedDate))) - Math.min(...chosen.map((f) => dayNumber(f.modifiedDate))) + 1 : 0;
+  const ok = chosen.length > 0 && days <= chooser.maxDays;
+  const summary = $('ch-summary');
+  summary.className = 'small ' + (ok ? 'ok-text' : 'err-text');
+  summary.textContent = chosen.length === 0 ? 'No file chosen.'
+    : `${chosen.length} file(s) chosen, ${days} day(s) of ${chooser.maxDays} maximum` + (ok ? '.' : `: remove files to stay within ${chooser.maxDays} days.`);
+  $('ch-save').disabled = !ok;
+  $('ch-table').querySelectorAll('tbody tr').forEach((/** @type {any} */ tr, /** @type {number} */ i) => {
+    const f = chooser?.files[i]; const cell = tr.querySelector('[data-role=status]');
+    if (!f || !cell) return;
+    cell.textContent = f.selected ? 'chosen' : f.isNew ? 'new, not chosen' : 'not chosen';
+    cell.className = f.selected ? 'ok-text' : f.isNew ? 'warn-text' : 'muted';
+  });
+}
+
+function chooseLatest() {
+  if (!chooser || !chooser.files.length) return;
+  const newest = Math.max(...chooser.files.map((f) => dayNumber(f.modifiedDate)));
+  for (const f of chooser.files) f.selected = dayNumber(f.modifiedDate) > newest - chooser.maxDays;
+  $('ch-table').querySelectorAll('tbody input[type=checkbox]').forEach((/** @type {any} */ b) => { b.checked = chooser?.files[Number(b.dataset.index)].selected; });
+  updateChooser();
+}
+
+async function saveChooser() {
+  if (!chooser) return;
+  const files = chooser.files.filter((f) => f.selected).map((f) => f.path);
+  try {
+    await api('/api/sources/' + chooser.id + '/files', { method: 'PUT', body: JSON.stringify({ files }) });
+    $('ch-result').className = 'small ok-text';
+    $('ch-result').textContent = 'Saved. The folder is being scanned with this choice.';
+    pollScan();
+  } catch (e) {
+    $('ch-result').className = 'small err-text';
+    $('ch-result').textContent = /** @type {Error} */ (e).message;
+  }
 }
 
 // ---------- Scan status ----------
@@ -627,6 +710,15 @@ async function start() {
   $('scan-cancel').addEventListener('click', () => api('/api/scan/cancel', { method: 'POST', body: '{}' }).catch((e) => notify(e.message)));
   $('s-validate').addEventListener('click', () => api('/api/sources/validate', { method: 'POST', body: JSON.stringify({ path: $('s-path').value }) }).then(renderValidation).catch((e) => notify(e.message)));
   $('s-cancel').addEventListener('click', resetSourceForm);
+  $('ch-close').addEventListener('click', () => { $('chooser').classList.add('hidden'); chooser = null; });
+  $('ch-latest').addEventListener('click', chooseLatest);
+  $('ch-none').addEventListener('click', () => {
+    if (!chooser) return;
+    for (const f of chooser.files) f.selected = false;
+    $('ch-table').querySelectorAll('tbody input[type=checkbox]').forEach((/** @type {any} */ b) => { b.checked = false; });
+    updateChooser();
+  });
+  $('ch-save').addEventListener('click', () => { saveChooser(); });
   $('src-form').addEventListener('submit', async (/** @type {Event} */ ev) => {
     ev.preventDefault();
     const id = $('s-id').value;
@@ -636,10 +728,12 @@ async function start() {
         notify(r.reindexed ? 'Saved. The time zone or format changed, so the source is being re-indexed.' : 'Saved.', true);
         resetSourceForm();
       } else {
+        const label = $('s-label').value;
         const r = await api('/api/sources', { method: 'POST', body: JSON.stringify(sourceBody()) });
         renderValidation(r.validation);
-        notify('Source added. The first scan has started.', true);
+        notify('Source added with the files of its latest 5 days. Check the choice below; the first scan has started.', true);
         resetSourceForm();
+        await openChooser(r.id, label).catch(() => {});
       }
       await loadSources(); pollScan();
     } catch (e) { notify(/** @type {Error} */ (e).message); }

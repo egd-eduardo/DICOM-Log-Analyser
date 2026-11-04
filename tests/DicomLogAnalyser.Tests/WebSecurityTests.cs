@@ -59,6 +59,51 @@ public sealed class WebSecurityTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task File_choice_api_lists_files_and_refuses_more_than_five_days()
+    {
+        var (cookie, csrf) = await SignIn();
+        var logs = _temp.Sub("daily");
+        for (var d = 1; d <= 7; d++)
+        {
+            var p = Path.Combine(logs, $"g{d}.log");
+            File.WriteAllText(p, $"INF 2026.11.0{d} 10:00:00 SPS - day {d}\n");
+            File.SetLastWriteTimeUtc(p, new DateTime(2026, 11, d, 12, 0, 0, DateTimeKind.Utc));
+        }
+
+        async Task<HttpResponseMessage> Send(HttpMethod m, string path, object? body = null)
+        {
+            using var req = new HttpRequestMessage(m, Base + path);
+            req.Headers.Add("Cookie", cookie);
+            if (m != HttpMethod.Get)
+            {
+                req.Headers.Add("Origin", Base);
+                req.Headers.Add(SecurityMiddleware.CsrfHeader, csrf);
+                req.Content = JsonContent.Create(body);
+            }
+
+            return await _http.SendAsync(req);
+        }
+
+        using var add = await Send(HttpMethod.Post, "/api/sources", new { label = "Daily", path = logs, timeZone = "Europe/Lisbon" });
+        var id = (await add.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("id").GetInt64();
+        using var list = await Send(HttpMethod.Get, $"/api/sources/{id}/files");
+        var body = await list.Content.ReadFromJsonAsync<JsonElement>();
+        Assert.Equal(5, body.GetProperty("maxDays").GetInt32());
+        Assert.Equal(7, body.GetProperty("files").GetArrayLength());
+        Assert.Equal(5, body.GetProperty("files").EnumerateArray().Count(f => f.GetProperty("selected").GetBoolean()));
+
+        using var tooMany = await Send(HttpMethod.Put, $"/api/sources/{id}/files", new { files = new[] { "g1.log", "g6.log" } });
+        Assert.Equal(HttpStatusCode.BadRequest, tooMany.StatusCode);
+        Assert.Contains("6 calendar days", await tooMany.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+        using var outside = await Send(HttpMethod.Put, $"/api/sources/{id}/files", new { files = new[] { "../../etc/passwd" } });
+        Assert.Equal(HttpStatusCode.BadRequest, outside.StatusCode);
+        using var ok = await Send(HttpMethod.Put, $"/api/sources/{id}/files", new { files = new[] { "g1.log", "g5.log" } });
+        Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+        var saved = _app.Services.GetRequiredService<DicomLogAnalyser.Core.Sources.SourceRepository>().Get(id)!;
+        Assert.Equal(["g1.log", "g5.log"], saved.SelectedFiles!.ToArray());
+    }
+
+    [Fact]
     public async Task Wrong_host_header_is_refused()
     {
         var (cookie, _) = await SignIn();
@@ -283,6 +328,8 @@ public sealed class ServerModeTests : IAsyncLifetime
     [InlineData("DELETE", "/api/sources/1")]
     [InlineData("POST", "/api/bundles?label=x")]
     [InlineData("GET", "/api/export.csv")]
+    [InlineData("GET", "/api/sources/1/files")]
+    [InlineData("PUT", "/api/sources/1/files")]
     [InlineData("GET", "/api/maintenance")]
     [InlineData("POST", "/api/maintenance/clean-temp")]
     [InlineData("POST", "/api/maintenance/purge-index")]

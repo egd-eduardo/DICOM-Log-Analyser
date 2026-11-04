@@ -166,7 +166,8 @@ public sealed class SearchService(IndexDatabase db)
                 (SELECT max(sort_ts) FROM events e WHERE e.source_id=s.id),
                 (SELECT count(*) FROM files f WHERE f.source_id=s.id AND f.status IN ('unreadable','missing','unrecognised')),
                 s.time_zone,
-                CASE WHEN s.time_zone IS NULL AND EXISTS (SELECT 1 FROM files f WHERE f.source_id=s.id AND f.format='b3dweb-gateway') THEN 1 END
+                CASE WHEN s.time_zone IS NULL AND EXISTS (SELECT 1 FROM files f WHERE f.source_id=s.id AND f.format='b3dweb-gateway') THEN 1 END,
+                s.unselected_files, s.new_files
             FROM sources s ORDER BY s.label
             """;
         using var r = cmd.ExecuteReader();
@@ -181,6 +182,10 @@ public sealed class SearchService(IndexDatabase db)
             if (r.IsDBNull(4)) notes.Add($"\"{label}\" has never been scanned, so none of its events are searchable yet.");
             else if (!r.IsDBNull(3) && r.GetString(3) == "unreachable") notes.Add($"\"{label}\" was unreachable at its last scan; recent events from it may be missing.");
             else if (!r.IsDBNull(3) && r.GetString(3) == "failed") notes.Add($"\"{label}\": the last scan stopped with an error; events after that point may be missing.");
+            if (r.GetInt64(11) > 0)
+                notes.Add($"\"{label}\" has {r.GetInt64(11)} new file(s) that are not chosen for analysis (at most 5 days of files per folder); choose them under Sources, Files if needed.");
+            else if (r.GetInt64(10) > 0)
+                notes.Add($"Only the chosen files of \"{label}\" are analysed (at most 5 days per folder); {r.GetInt64(10)} other file(s) in the folder are not.");
             if (r.GetInt64(7) > 0) notes.Add($"\"{label}\" has {r.GetInt64(7)} file(s) that are unreadable, missing or unrecognised.");
             if (!r.IsDBNull(9)) notes.Add($"\"{label}\" logs local times without a time zone and none is configured: its times are shown as written and may be offset from other sources.");
             if (!r.IsDBNull(5) && (request.FromMs is not null || request.ToMs is not null))

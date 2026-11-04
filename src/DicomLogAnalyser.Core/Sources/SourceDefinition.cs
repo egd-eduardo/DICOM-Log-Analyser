@@ -27,4 +27,18 @@ public sealed record SourceDefinition
     public string? LastScanMessage { get; init; }
     public string? BundleSha256 { get; init; }
     public long? BundleBytes { get; init; }
+
+    /// <summary>Folder sources: relative paths of the files chosen for analysis; null until a selection exists.</summary>
+    public IReadOnlyList<string>? SelectedFiles { get; init; }
+
+    /// <summary>When the selection was last saved (files modified later are reported as new).</summary>
+    public string? SelectionUtc { get; init; }
+
+    /// <summary>All files present in the folder when the selection was made; files not in this list are "new".</summary>
+    public IReadOnlyList<string>? SeenFiles { get; init; }
+
+    /// <summary>Files in the folder that were not analysed at the last scan, and how many of them are new.</summary>
+    public int UnselectedFiles { get; init; }
+
+    public int NewFiles { get; init; }
 }

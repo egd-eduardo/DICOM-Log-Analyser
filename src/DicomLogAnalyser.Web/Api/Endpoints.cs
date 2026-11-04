@@ -21,6 +21,8 @@ public sealed record ScanInput(IReadOnlyList<long>? SourceIds);
 
 public sealed record ConfirmInput(string? Confirm);
 
+public sealed record SelectionInput(IReadOnlyList<string>? Files);
+
 public static class Endpoints
 {
     public const int ExportMaxRows = 100_000;
@@ -98,7 +100,65 @@ public static class Endpoints
         // Viewers need the source list for filters, but not the folder paths behind it.
         api.MapGet("/sources", (HttpContext ctx, SourceRepository repo) => SecurityMiddleware.CurrentSession(ctx).IsAdmin
             ? Results.Json(repo.List())
-            : Results.Json(repo.List().Select(x => x with { Path = "", LastScanMessage = null })));
+            : Results.Json(repo.List().Select(x => x with { Path = "", LastScanMessage = null, SelectedFiles = null })));
+
+        // File chooser for folder sources: at most FileSelection.MaxDays calendar days of files per folder.
+        admin.MapGet("/sources/{id:long}/files", (long id, SourceRepository repo) =>
+        {
+            if (repo.Get(id) is not { Kind: SourceKinds.Folder } source) return Results.NotFound(new { error = "not_found" });
+            var tz = Ingestor.ResolveTimeZone(source.TimeZone);
+            IReadOnlyList<CandidateFile> files;
+            try
+            {
+                files = FileSelection.List(source, tz);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return Results.Json(new { error = "unreachable", message = "The folder could not be listed. Check that it is reachable, then try again." }, statusCode: StatusCodes.Status409Conflict);
+            }
+
+            var saved = source.SelectedFiles is not null;
+            var chosen = new HashSet<string>(source.SelectedFiles ?? FileSelection.Default(files), StringComparer.Ordinal);
+            var seen = new HashSet<string>(source.SeenFiles ?? [], StringComparer.Ordinal);
+            return Results.Json(new
+            {
+                maxDays = FileSelection.MaxDays,
+                timeZone = (tz ?? TimeZoneInfo.Local).Id,
+                selectionSaved = saved,
+                truncated = files.Count > FileSelection.MaxListed,
+                files = files.Take(FileSelection.MaxListed).Select(f => new
+                {
+                    path = f.RelPath,
+                    size = f.Size,
+                    modifiedUtc = f.ModifiedUtc,
+                    modifiedDate = f.ModifiedDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    selected = chosen.Contains(f.RelPath),
+                    isNew = saved && source.SeenFiles is not null && !seen.Contains(f.RelPath) && !chosen.Contains(f.RelPath),
+                }),
+            });
+        });
+
+        admin.MapPut("/sources/{id:long}/files", (HttpContext ctx, long id, SelectionInput input, SourceRepository repo, AuditLog audit, ScanCoordinator coordinator) =>
+        {
+            if (repo.Get(id) is not { Kind: SourceKinds.Folder } source) return Results.NotFound(new { error = "not_found" });
+            IReadOnlyList<CandidateFile> files;
+            try
+            {
+                files = FileSelection.List(source, Ingestor.ResolveTimeZone(source.TimeZone));
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return Results.Json(new { error = "unreachable", message = "The folder could not be listed, so the choice cannot be checked." }, statusCode: StatusCodes.Status409Conflict);
+            }
+
+            var problem = FileSelection.Validate(input.Files, files);
+            if (problem is not null) return Bad(problem);
+            repo.SetSelection(id, input.Files!, files.Select(f => f.RelPath).ToList());
+            var actor = SecurityMiddleware.CurrentSession(ctx).Identity;
+            audit.Write(actor, "selection_changed", new Dictionary<string, object?> { ["sourceId"] = id, ["files"] = input.Files!.Count });
+            if (source.Enabled) coordinator.EnqueueScan(actor, [id]);
+            return Results.Json(new { id, files = input.Files!.Count });
+        });
 
         admin.MapPost("/sources/validate", (PathInput input, PathValidator validator) => Results.Json(validator.ValidateFolder(input.Path)));
 

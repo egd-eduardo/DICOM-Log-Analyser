@@ -50,6 +50,16 @@ FileEnumerator ──> per file: fingerprint check ──> LineReader (byte offs
   fingerprint, is treated as a rename (`app.log` to `app.log.1`) and keeps its index. Files that vanish keep their
   events and are reported as *missing*.
 
+## File selection (at most 5 days per folder)
+
+Folder sources store the chosen files (`sources.selected_files`) and the files present when the choice was made
+(`selection_seen`). `FileSelection` lists candidates with their last-modified date in the source's time zone, proposes
+the most recent 5 calendar days, and validates any choice (at most 5 consecutive calendar days, files must exist). At
+each scan, only chosen files are processed; files no longer chosen have their events and state removed; unchosen files
+that were not present at choice time are counted as *new* (`new_files`) and reported. Log rotation keeps both the
+renamed file (its indexed content) and the chosen name. Bundles have no selection and are indexed completely. Schema
+version 2 adds these columns; a version 1 index is upgraded in place.
+
 ## Normalised event model (`events` table)
 
 | Field | Meaning |

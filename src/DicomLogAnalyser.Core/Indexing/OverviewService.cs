@@ -5,7 +5,8 @@ using DicomLogAnalyser.Core.Model;
 namespace DicomLogAnalyser.Core.Indexing;
 
 public sealed record SourceOverview(long Id, string Label, string Kind, bool Enabled, string? LastScanUtc, string? LastScanStatus, string? LastScanMessage,
-    long Events, long Errors, long Warnings, long? FirstTs, long? LastTs, bool HasUnzonedTimes, long Files, long ProblemFiles, long UnparsedLines);
+    long Events, long Errors, long Warnings, long? FirstTs, long? LastTs, bool HasUnzonedTimes, long Files, long ProblemFiles, long UnparsedLines,
+    long UnselectedFiles, long NewFiles);
 
 public sealed record CategoryCount(string Category, long Events, long Errors, long Warnings);
 
@@ -64,7 +65,8 @@ public sealed partial class OverviewService(IndexDatabase db)
                     CASE WHEN s.time_zone IS NULL AND EXISTS (SELECT 1 FROM files f WHERE f.source_id=s.id AND f.format='b3dweb-gateway') THEN 1 ELSE 0 END,
                     (SELECT count(*) FROM files f WHERE f.source_id=s.id),
                     (SELECT count(*) FROM files f WHERE f.source_id=s.id AND f.status IN ('unreadable','missing','unrecognised')),
-                    (SELECT ifnull(sum(unparsed_lines),0) FROM files f WHERE f.source_id=s.id)
+                    (SELECT ifnull(sum(unparsed_lines),0) FROM files f WHERE f.source_id=s.id),
+                    s.unselected_files, s.new_files
                 FROM sources s LEFT JOIN (
                     SELECT source_id, count(*) n, sum(level>=5) err, sum(level=4) wrn, min(ts) first_ts, max(ts) last_ts, 0 unzoned
                     FROM events GROUP BY source_id) a ON a.source_id=s.id
@@ -76,7 +78,7 @@ public sealed partial class OverviewService(IndexDatabase db)
                 sources.Add(new SourceOverview(r.GetInt64(0), r.GetString(1), r.GetString(2), r.GetInt64(3) != 0,
                     r.IsDBNull(4) ? null : r.GetString(4), r.IsDBNull(5) ? null : r.GetString(5), r.IsDBNull(6) ? null : r.GetString(6),
                     r.GetInt64(7), r.GetInt64(8), r.GetInt64(9), r.IsDBNull(10) ? null : r.GetInt64(10), r.IsDBNull(11) ? null : r.GetInt64(11),
-                    r.GetInt64(12) != 0, r.GetInt64(13), r.GetInt64(14), r.GetInt64(15)));
+                    r.GetInt64(12) != 0, r.GetInt64(13), r.GetInt64(14), r.GetInt64(15), r.GetInt64(16), r.GetInt64(17)));
             }
         }
 

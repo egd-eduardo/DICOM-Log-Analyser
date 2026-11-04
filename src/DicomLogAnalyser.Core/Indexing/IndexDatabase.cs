@@ -8,7 +8,7 @@ namespace DicomLogAnalyser.Core.Indexing;
 /// </summary>
 public sealed class IndexDatabase
 {
-    public const int SchemaVersion = 1;
+    public const int SchemaVersion = 2;
     private readonly string _connectionString;
 
     public IndexDatabase(string databasePath)
@@ -54,7 +54,9 @@ public sealed class IndexDatabase
         if (version == SchemaVersion) return;
 
         using var tx = c.BeginTransaction();
-        Exec(c, Schema, tx);
+        if (version == 0) Exec(c, Schema, tx);
+        // Version 2: per-folder file selection (5-day limit) and counts of files left out.
+        if (version == 1) Exec(c, MigrationTo2, tx);
         Exec(c, $"PRAGMA user_version={SchemaVersion};", tx);
         tx.Commit();
     }
@@ -103,6 +105,14 @@ public sealed class IndexDatabase
         return (T)Convert.ChangeType(result, target, System.Globalization.CultureInfo.InvariantCulture);
     }
 
+    private const string MigrationTo2 = """
+        ALTER TABLE sources ADD COLUMN selected_files TEXT NULL;
+        ALTER TABLE sources ADD COLUMN selection_utc TEXT NULL;
+        ALTER TABLE sources ADD COLUMN selection_seen TEXT NULL;
+        ALTER TABLE sources ADD COLUMN unselected_files INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE sources ADD COLUMN new_files INTEGER NOT NULL DEFAULT 0;
+        """;
+
     private const string Schema = """
         CREATE TABLE IF NOT EXISTS sources (
             id INTEGER PRIMARY KEY,
@@ -119,7 +129,12 @@ public sealed class IndexDatabase
             last_scan_status TEXT NULL,
             last_scan_message TEXT NULL,
             bundle_sha256 TEXT NULL,
-            bundle_bytes INTEGER NULL
+            bundle_bytes INTEGER NULL,
+            selected_files TEXT NULL,
+            selection_utc TEXT NULL,
+            selection_seen TEXT NULL,
+            unselected_files INTEGER NOT NULL DEFAULT 0,
+            new_files INTEGER NOT NULL DEFAULT 0
         );
         CREATE TABLE IF NOT EXISTS files (
             id INTEGER PRIMARY KEY,

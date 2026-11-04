@@ -6,7 +6,7 @@ namespace DicomLogAnalyser.Core.Sources;
 
 public sealed class SourceRepository(IndexDatabase db, TimeProvider time)
 {
-    private const string Columns = "id, label, kind, path, enabled, recursive, include_patterns, time_zone, format_hint, created_utc, last_scan_utc, last_scan_status, last_scan_message, bundle_sha256, bundle_bytes";
+    private const string Columns = "id, label, kind, path, enabled, recursive, include_patterns, time_zone, format_hint, created_utc, last_scan_utc, last_scan_status, last_scan_message, bundle_sha256, bundle_bytes, selected_files, selection_utc, unselected_files, new_files, selection_seen";
 
     public IReadOnlyList<SourceDefinition> List()
     {
@@ -109,6 +109,46 @@ public sealed class SourceRepository(IndexDatabase db, TimeProvider time)
         db.MarkChanged();
     }
 
+    /// <summary>
+    /// Saves the files chosen for analysis of a folder source, and the files present when the choice was made
+    /// (<paramref name="seen"/>; null keeps the previous list).
+    /// </summary>
+    public void SetSelection(long id, IReadOnlyList<string> files, IReadOnlyCollection<string>? seen = null)
+    {
+        ArgumentNullException.ThrowIfNull(files);
+        using var c = db.Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "UPDATE sources SET selected_files=$f, selection_utc=$t, selection_seen=coalesce($seen, selection_seen) WHERE id=$id";
+        cmd.Parameters.AddWithValue("$seen", seen is null ? DBNull.Value : System.Text.Json.JsonSerializer.Serialize(seen.Order(StringComparer.Ordinal).ToList()));
+        cmd.Parameters.AddWithValue("$f", System.Text.Json.JsonSerializer.Serialize(files.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList()));
+        cmd.Parameters.AddWithValue("$t", Now());
+        cmd.Parameters.AddWithValue("$id", id);
+        cmd.ExecuteNonQuery();
+        db.MarkChanged();
+    }
+
+    /// <summary>Follows a selected file that log rotation renamed, without changing the selection time.</summary>
+    public void RenameSelected(long id, IReadOnlyList<string> files)
+    {
+        using var c = db.Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "UPDATE sources SET selected_files=$f WHERE id=$id";
+        cmd.Parameters.AddWithValue("$f", System.Text.Json.JsonSerializer.Serialize(files.Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList()));
+        cmd.Parameters.AddWithValue("$id", id);
+        cmd.ExecuteNonQuery();
+    }
+
+    public void RecordFileCounts(long id, int unselected, int newFiles)
+    {
+        using var c = db.Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "UPDATE sources SET unselected_files=$u, new_files=$n WHERE id=$id";
+        cmd.Parameters.AddWithValue("$u", unselected);
+        cmd.Parameters.AddWithValue("$n", newFiles);
+        cmd.Parameters.AddWithValue("$id", id);
+        cmd.ExecuteNonQuery();
+    }
+
     private string Now() => time.GetUtcNow().ToString("O", CultureInfo.InvariantCulture);
 
     private static void Bind(SqliteCommand cmd, SourceDefinition s)
@@ -138,5 +178,10 @@ public sealed class SourceRepository(IndexDatabase db, TimeProvider time)
         LastScanMessage = r.IsDBNull(12) ? null : r.GetString(12),
         BundleSha256 = r.IsDBNull(13) ? null : r.GetString(13),
         BundleBytes = r.IsDBNull(14) ? null : r.GetInt64(14),
+        SelectedFiles = r.IsDBNull(15) ? null : System.Text.Json.JsonSerializer.Deserialize<List<string>>(r.GetString(15)),
+        SelectionUtc = r.IsDBNull(16) ? null : r.GetString(16),
+        UnselectedFiles = r.GetInt32(17),
+        NewFiles = r.GetInt32(18),
+        SeenFiles = r.IsDBNull(19) ? null : System.Text.Json.JsonSerializer.Deserialize<List<string>>(r.GetString(19)),
     };
 }

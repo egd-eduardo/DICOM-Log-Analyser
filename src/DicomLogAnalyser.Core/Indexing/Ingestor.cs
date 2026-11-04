@@ -23,6 +23,8 @@ public sealed class ScanSummary
     public int FilesReset { get; set; }
     public long EventsAdded { get; set; }
     public long BytesRead { get; set; }
+    public int FilesNotSelected { get; set; }
+    public int FilesNew { get; set; }
 }
 
 /// <summary>
@@ -70,7 +72,9 @@ public sealed class Ingestor(IndexDatabase db, SourceRepository sources, TimePro
 
         var known = LoadFileStates(source.Id);
         var present = files.ToDictionary(f => Relative(source.Path, f.FullName), f => f, StringComparer.Ordinal);
-        DetectRenames(source.Id, known, present, summary);
+        var renames = new List<(string Old, string New)>();
+        DetectRenames(source.Id, known, present, summary, renames);
+        if (source.Kind == SourceKinds.Folder) present = ApplySelection(source, tz, known, present, renames, summary);
 
         var total = present.Count;
         var done = 0;
@@ -333,7 +337,70 @@ public sealed class Ingestor(IndexDatabase db, SourceRepository sources, TimePro
     /// Rotation by rename: a known file that disappeared, or whose path now holds different content, and a new path
     /// whose first block matches its fingerprint are the same file. Its index moves to the new path.
     /// </summary>
-    private void DetectRenames(long sourceId, Dictionary<string, FileState> known, Dictionary<string, FileInfo> present, ScanSummary summary)
+    /// <summary>
+    /// Folder sources analyse only the chosen files (at most <see cref="FileSelection.MaxDays"/> days, see
+    /// <see cref="FileSelection"/>). Without a saved choice, the most recent days are chosen and saved. Files that are
+    /// no longer chosen are removed from the index; new files wait for the user's choice.
+    /// </summary>
+    private Dictionary<string, FileInfo> ApplySelection(SourceDefinition source, TimeZoneInfo? tz, Dictionary<string, FileState> known,
+        Dictionary<string, FileInfo> present, List<(string Old, string New)> renames, ScanSummary summary)
+    {
+        var zone = tz ?? TimeZoneInfo.Local;
+        IReadOnlyList<string> selected;
+        HashSet<string> seen;
+        if (source.SelectedFiles is null)
+        {
+            selected = FileSelection.Default(present.Select(p => FileSelection.Candidate(source.Path, p.Value, zone)).ToList());
+            sources.SetSelection(source.Id, selected, present.Keys);
+            seen = new HashSet<string>(present.Keys, StringComparer.Ordinal);
+        }
+        else
+        {
+            selected = source.SelectedFiles;
+            seen = new HashSet<string>(source.SeenFiles ?? (IEnumerable<string>)present.Keys, StringComparer.Ordinal);
+            // Log rotation: the renamed file keeps its indexed content (its new name is added to the choice) and the chosen
+            // name stays chosen, so the file the application recreates under that name continues to be analysed.
+            var renamed = selected.Concat(renames.Where(r => selected.Contains(r.Old, StringComparer.Ordinal)).Select(r => r.New))
+                .Distinct(StringComparer.Ordinal).ToList();
+            if (!renamed.SequenceEqual(selected, StringComparer.Ordinal))
+            {
+                sources.RenameSelected(source.Id, renamed);
+                selected = renamed;
+            }
+        }
+
+        var chosen = new HashSet<string>(selected, StringComparer.Ordinal);
+        foreach (var (rel, state) in known.Where(k => !chosen.Contains(k.Key)).ToList())
+        {
+            DeleteFile(state.Id);
+            known.Remove(rel);
+        }
+
+        var unselected = present.Where(p => !chosen.Contains(p.Key)).ToList();
+        summary.FilesNotSelected = unselected.Count;
+        // New = not in the folder when the choice was made (an unticked file that keeps growing is not "new").
+        summary.FilesNew = unselected.Count(p => !seen.Contains(p.Key));
+        sources.RecordFileCounts(source.Id, summary.FilesNotSelected, summary.FilesNew);
+        return present.Where(p => chosen.Contains(p.Key)).ToDictionary(p => p.Key, p => p.Value, StringComparer.Ordinal);
+    }
+
+    private void DeleteFile(long fileId)
+    {
+        using var c = db.Open();
+        using var tx = c.BeginTransaction();
+        using (var cmd = c.CreateCommand())
+        {
+            cmd.Transaction = tx;
+            cmd.CommandText = "DELETE FROM events WHERE file_id=$f; DELETE FROM files WHERE id=$f;";
+            cmd.Parameters.AddWithValue("$f", fileId);
+            cmd.ExecuteNonQuery();
+        }
+
+        tx.Commit();
+    }
+
+    private void DetectRenames(long sourceId, Dictionary<string, FileState> known, Dictionary<string, FileInfo> present, ScanSummary summary,
+        List<(string Old, string New)> renames)
     {
         var candidates = new List<FileState>();
         foreach (var (rel, state) in known)
@@ -364,6 +431,7 @@ public sealed class Ingestor(IndexDatabase db, SourceRepository sources, TimePro
             }
 
             match.Renamed = true;
+            renames.Add((match.RelPath, rel));
             // The old path, if it still exists, now holds a new file and gets a fresh state.
             known.Remove(match.RelPath);
             known[rel] = match with { RelPath = rel, Renamed = false };

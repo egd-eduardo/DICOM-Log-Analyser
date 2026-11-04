@@ -98,6 +98,14 @@ reports whether the folder exists, is readable, how many files it contains, whet
 and whether it is a mapped drive or a read-only mount. Sources can be relabelled, enabled/disabled, rescanned and
 deleted; deleting a folder source removes only its index, never the original files.
 
+**At most 5 days of files per folder.** Each folder source analyses only the files you choose, and their
+last-modified dates must lie within 5 consecutive calendar days (counted in the source's time zone). When you add a
+folder, the files of its most recent 5 days are pre-selected and the **file chooser** opens; reopen it later with
+**Files** in the source list. Chosen files are read completely. Unticking a file removes its events from the index.
+Files that appear later are listed as *new, not chosen* (and flagged in the overview and search notes) until you tick
+them. A chosen file keeps being analysed after log rotation, under its original name. Imported bundles are not limited:
+you choose their content when you create the zip.
+
 **Check the time zone** for B3DWEB Gateway sources: their timestamps have no UTC offset. For a new source or bundle
 the field is pre-filled with the time zone of the computer running the browser (for example `Europe/Lisbon`); change
 it when the logs were written elsewhere. Editing a source shows its saved time zone.

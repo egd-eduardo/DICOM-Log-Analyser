@@ -83,6 +83,17 @@
       <div class="row between"><h1>Sources</h1><div><button id="scan-all" class="primary">Scan all enabled sources</button> <button id="scan-cancel" class="ghost">Cancel scan</button></div></div>
       <p class="muted">Sources are only read, never changed. Each scan reads only what was added since the last scan.</p>
       <div class="table-wrap"><table id="src-table"><thead><tr><th>Label</th><th>Type</th><th>Path</th><th>Time zone</th><th>Enabled</th><th>Last scan</th><th></th></tr></thead><tbody></tbody></table></div>
+      <section id="chooser" class="chooser hidden" aria-labelledby="ch-title">
+        <div class="row between"><h2 id="ch-title">Files analysed</h2><button id="ch-close" type="button" class="ghost">Close</button></div>
+        <p id="ch-help" class="muted small"></p>
+        <div class="row">
+          <button id="ch-latest" type="button" class="ghost">Select latest 5 days</button>
+          <button id="ch-none" type="button" class="ghost">Clear</button>
+          <span id="ch-summary" class="small"></span>
+        </div>
+        <div class="table-wrap ch-wrap"><table id="ch-table"><thead><tr><th><span class="sr-only">Chosen</span></th><th>File</th><th>Modified</th><th>Size</th><th>Status</th></tr></thead><tbody></tbody></table></div>
+        <div class="row"><button id="ch-save" type="button" class="primary">Save choice and scan</button><span id="ch-result" class="small"></span></div>
+      </section>
       <h2 id="src-form-title">Add a folder source</h2>
       <form id="src-form" class="form" autocomplete="off">
         <input type="hidden" id="s-id">
