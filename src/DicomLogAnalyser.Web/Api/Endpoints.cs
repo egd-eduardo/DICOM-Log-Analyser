@@ -57,11 +57,14 @@ public static class Endpoints
                 maxUploadMb = rt.Options.MaxUploadBytes / (1024 * 1024),
                 scanIntervalMinutes = rt.Options.ScanIntervalMinutes,
                 liveIntervalSeconds = rt.Options.LiveIntervalSeconds,
+                folderDialog = ctx.RequestServices.GetRequiredService<Platform.IFolderPicker>().IsSupported,
                 formats = FormatRegistry.All.Select(f => new { id = f.Id, name = f.DisplayName }),
             });
         });
 
         api.MapGet("/overview", (OverviewService overview) => Results.Json(overview.Build()));
+
+        api.MapGet("/categories", (OverviewService overview) => Results.Json(overview.Categories()));
 
         api.MapGet("/search", (HttpContext ctx, SearchService search) =>
         {
@@ -162,6 +165,41 @@ public static class Endpoints
             audit.Write(actor, "selection_changed", new Dictionary<string, object?> { ["sourceId"] = id, ["files"] = input.Files!.Count });
             if (source.Enabled) coordinator.EnqueueScan(actor, [id]);
             return Results.Json(new { id, files = input.Files!.Count });
+        });
+
+        // Folder choice without typing: the native dialog of this computer (local mode) or the in-app browser.
+        admin.MapPost("/folders/pick", async (Platform.IFolderPicker picker, CancellationToken ct) =>
+        {
+            if (!picker.IsSupported) return Results.Json(new { error = "unsupported", message = "No folder dialog is available here; use the folder browser." }, statusCode: StatusCodes.Status409Conflict);
+            try
+            {
+                var dir = await picker.PickAsync(ct).ConfigureAwait(false);
+                return Results.Json(new { path = dir?.FullName, cancelled = dir is null });
+            }
+            catch (InvalidOperationException)
+            {
+                return Results.Json(new { error = "busy", message = "A folder dialog is already open on this computer." }, statusCode: StatusCodes.Status409Conflict);
+            }
+        });
+
+        admin.MapGet("/folders", (HttpContext ctx, Platform.FolderBrowser browser) =>
+        {
+            try
+            {
+                return Results.Json(browser.List(ctx.Request.Query["path"].ToString()));
+            }
+            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+            {
+                return Bad("This is not a valid folder path.");
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Json(new { error = "not_allowed", message = "This folder cannot be opened (no permission, or outside the mounted source folders)." }, statusCode: StatusCodes.Status403Forbidden);
+            }
+            catch (IOException)
+            {
+                return Results.Json(new { error = "unreachable", message = "This folder does not exist or is not reachable." }, statusCode: StatusCodes.Status404NotFound);
+            }
         });
 
         admin.MapPost("/sources/validate", (PathInput input, PathValidator validator) => Results.Json(validator.ValidateFolder(input.Path)));

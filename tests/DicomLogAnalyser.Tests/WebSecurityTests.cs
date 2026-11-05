@@ -16,10 +16,20 @@ public sealed class WebSecurityTests : IAsyncLifetime
 
     private string Base => $"http://127.0.0.1:{_port}";
 
+    private string _picked = "";
+
+    private sealed class FakePicker(string path) : DicomLogAnalyser.Web.Platform.IFolderPicker
+    {
+        public bool IsSupported => true;
+
+        public Task<DirectoryInfo?> PickAsync(CancellationToken ct) => Task.FromResult<DirectoryInfo?>(new DirectoryInfo(path));
+    }
+
     public async Task InitializeAsync()
     {
         var options = new AppOptions { Mode = AppMode.Local, Port = 0, DataDirectory = _temp.Sub("data"), OpenBrowser = false };
-        _app = AppHost.Build(options, logging: l => l.ClearProviders());
+        _picked = _temp.Sub("picked-by-dialog");
+        _app = AppHost.Build(options, logging: l => l.ClearProviders(), folderPicker: new FakePicker(_picked));
         _port = await AppHost.StartAsync(_app);
         _http = new HttpClient(new HttpClientHandler { UseCookies = false, AllowAutoRedirect = false });
     }
@@ -101,6 +111,42 @@ public sealed class WebSecurityTests : IAsyncLifetime
         Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
         var saved = _app.Services.GetRequiredService<DicomLogAnalyser.Core.Sources.SourceRepository>().Get(id)!;
         Assert.Equal(["g1.log", "g5.log"], saved.SelectedFiles!.ToArray());
+    }
+
+    [Fact]
+    public async Task Folder_dialog_and_folder_browser_return_folders()
+    {
+        var (cookie, csrf) = await SignIn();
+        async Task<JsonElement> Call(HttpMethod m, string path, HttpStatusCode expected = HttpStatusCode.OK)
+        {
+            using var req = new HttpRequestMessage(m, Base + path);
+            req.Headers.Add("Cookie", cookie);
+            if (m != HttpMethod.Get)
+            {
+                req.Headers.Add("Origin", Base);
+                req.Headers.Add(SecurityMiddleware.CsrfHeader, csrf);
+                req.Content = JsonContent.Create(new { });
+            }
+
+            using var res = await _http.SendAsync(req);
+            Assert.Equal(expected, res.StatusCode);
+            return await res.Content.ReadFromJsonAsync<JsonElement>();
+        }
+
+        Assert.True((await Call(HttpMethod.Get, "/api/session")).GetProperty("folderDialog").GetBoolean());
+        Assert.Equal(_picked, (await Call(HttpMethod.Post, "/api/folders/pick")).GetProperty("path").GetString());
+
+        var roots = await Call(HttpMethod.Get, "/api/folders");
+        Assert.True(roots.GetProperty("folders").GetArrayLength() > 0);
+        var parent = _temp.Sub("browse");
+        _temp.Sub("browse/Gateway");
+        _temp.Sub("browse/Router");
+        File.WriteAllText(Path.Combine(parent, "x.log"), "x");
+        var listing = await Call(HttpMethod.Get, "/api/folders?path=" + Uri.EscapeDataString(parent));
+        Assert.Equal(["Gateway", "Router"], listing.GetProperty("folders").EnumerateArray().Select(f => f.GetProperty("name").GetString()!).ToArray());
+        Assert.Equal(1, listing.GetProperty("files").GetInt32());
+        await Call(HttpMethod.Get, "/api/folders?path=relative/path", HttpStatusCode.BadRequest);
+        await Call(HttpMethod.Get, "/api/folders?path=" + Uri.EscapeDataString(Path.Combine(parent, "missing")), HttpStatusCode.NotFound);
     }
 
     [Fact]
@@ -334,6 +380,8 @@ public sealed class ServerModeTests : IAsyncLifetime
     [InlineData("POST", "/api/maintenance/clean-temp")]
     [InlineData("POST", "/api/maintenance/purge-index")]
     [InlineData("POST", "/api/maintenance/fresh-session")]
+    [InlineData("POST", "/api/folders/pick")]
+    [InlineData("GET", "/api/folders")]
     public async Task Viewers_cannot_change_export_or_administer(string method, string path)
     {
         await Start("127.0.0.1/32");
@@ -369,6 +417,29 @@ public sealed class ServerModeTests : IAsyncLifetime
             Assert.Contains("secret-share-name", await src.Content.ReadAsStringAsync(), StringComparison.Ordinal);
         using (var scan = await Send(HttpMethod.Post, "/api/scan", "admin@example.org", new { })) Assert.Equal(HttpStatusCode.Accepted, scan.StatusCode);
         using (var m = await Send(HttpMethod.Get, "/api/maintenance", "admin@example.org")) Assert.Equal(HttpStatusCode.OK, m.StatusCode);
+    }
+
+    [Fact]
+    public async Task Central_mode_folder_browser_is_confined_to_mounted_sources_and_has_no_dialog()
+    {
+        await Start("127.0.0.1/32");
+        var roots = _app.Services.GetRequiredService<AppOptions>().SourceRoots[0];
+        Directory.CreateDirectory(Path.Combine(roots, "site-a"));
+        using (var s = await Send(HttpMethod.Get, "/api/session", "admin@example.org"))
+            Assert.False((await s.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("folderDialog").GetBoolean());
+        using (var top = await Send(HttpMethod.Get, "/api/folders", "admin@example.org"))
+            Assert.Equal(roots, (await top.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("folders")[0].GetProperty("path").GetString());
+        using (var inside = await Send(HttpMethod.Get, "/api/folders?path=" + Uri.EscapeDataString(roots), "admin@example.org"))
+        {
+            var body = await inside.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal("site-a", body.GetProperty("folders")[0].GetProperty("name").GetString());
+            Assert.Equal(JsonValueKind.Null, body.GetProperty("parent").ValueKind);
+        }
+
+        using (var outside = await Send(HttpMethod.Get, "/api/folders?path=" + Uri.EscapeDataString(_temp.Path), "admin@example.org"))
+            Assert.Equal(HttpStatusCode.Forbidden, outside.StatusCode);
+        using (var pick = await Send(HttpMethod.Post, "/api/folders/pick", "admin@example.org", new { }))
+            Assert.Equal(HttpStatusCode.Conflict, pick.StatusCode);
     }
 
     [Fact]

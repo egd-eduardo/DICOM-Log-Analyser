@@ -40,10 +40,11 @@ public sealed class SearchService(IndexDatabase db)
     public SearchResponse Search(SearchRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var fts = FtsQuery.Build(request.Text);
-        var queryIgnored = !string.IsNullOrWhiteSpace(request.Text) && fts is null;
+        var query = FtsQuery.Parse(request.Text);
+        var fts = query.Match;
+        var queryIgnored = !string.IsNullOrWhiteSpace(request.Text) && query.IsEmpty && query.ShortExcluded.Count == 0;
         using var c = db.Open();
-        var (where, args) = BuildWhere(request, fts);
+        var (where, args) = BuildWhere(request, query);
         var limit = Math.Clamp(request.Limit, 1, MaxLimit);
         var desc = !request.OldestFirst;
 
@@ -96,9 +97,10 @@ public sealed class SearchService(IndexDatabase db)
     public IEnumerable<EventSummary> Export(SearchRequest request, int max)
     {
         ArgumentNullException.ThrowIfNull(request);
-        var fts = FtsQuery.Build(request.Text);
+        var query = FtsQuery.Parse(request.Text);
+        var fts = query.Match;
         using var c = db.Open();
-        var (where, args) = BuildWhere(request, fts);
+        var (where, args) = BuildWhere(request, query);
         using var cmd = Command(c, $"SELECT {SummaryColumns}, e.sort_ts FROM {From(fts)} CROSS JOIN files f ON f.id=e.file_id CROSS JOIN sources s ON s.id=e.source_id WHERE {where} ORDER BY e.sort_ts ASC, e.id ASC LIMIT $limit", args);
         cmd.Parameters.AddWithValue("$limit", max);
         using var r = cmd.ExecuteReader();
@@ -205,14 +207,29 @@ public sealed class SearchService(IndexDatabase db)
 
     private static string Fmt(long ms) => DateTimeOffset.FromUnixTimeMilliseconds(ms).UtcDateTime.ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture);
 
-    private static (string Where, List<(string, object?)> Args) BuildWhere(SearchRequest q, string? fts)
+    private static (string Where, List<(string, object?)> Args) BuildWhere(SearchRequest q, TextQuery text)
     {
         var sb = new StringBuilder("1=1");
         var args = new List<(string, object?)>();
-        if (fts is not null)
+        if (text.Match is not null)
         {
             sb.Append(" AND events_fts MATCH $fts");
-            args.Add(("$fts", fts));
+            args.Add(("$fts", text.Match));
+        }
+
+        // Terms shorter than 3 characters cannot use the trigram index: plain substring scan (case-insensitive for ASCII).
+        for (var i = 0; i < text.ShortIncluded.Count; i++)
+        {
+            var name = "$si" + i.ToString(CultureInfo.InvariantCulture);
+            sb.Append(CultureInfo.InvariantCulture, $" AND (e.message LIKE {name} ESCAPE '\\' OR ifnull(e.detail,'') LIKE {name} ESCAPE '\\' OR e.category LIKE {name} ESCAPE '\\' OR ifnull(e.component,'') LIKE {name} ESCAPE '\\')");
+            args.Add((name, FtsQuery.LikePattern(text.ShortIncluded[i])));
+        }
+
+        for (var i = 0; i < text.ShortExcluded.Count; i++)
+        {
+            var name = "$so" + i.ToString(CultureInfo.InvariantCulture);
+            sb.Append(CultureInfo.InvariantCulture, $" AND NOT (e.message LIKE {name} ESCAPE '\\' OR ifnull(e.detail,'') LIKE {name} ESCAPE '\\' OR e.category LIKE {name} ESCAPE '\\' OR ifnull(e.component,'') LIKE {name} ESCAPE '\\')");
+            args.Add((name, FtsQuery.LikePattern(text.ShortExcluded[i])));
         }
 
         if (q.MinLevel is { } lvl)

@@ -4,6 +4,8 @@
     <RootNamespace>DicomLogAnalyser.Web</RootNamespace>
     <AssemblyName>DicomLogAnalyser</AssemblyName>
     <InvariantGlobalization>false</InvariantGlobalization>
+    <!-- Source-generated P/Invoke for the Windows folder dialog. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <UseAppHost>true</UseAppHost>
     <!-- Off on purpose: the analyzer pulls Microsoft.NET.ILLink.Tasks, whose version follows each machine's SDK patch
          level and would make the lock file differ between developers and CI. -->

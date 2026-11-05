@@ -87,6 +87,11 @@ highlight colour and theme are stored in `localStorage` (preferences only, no da
   control or reserved characters, symbolic links or special files, encryption, duplicates (case-insensitive), more
   than 20 000 entries, per-file and total expanded size limits and a compression ratio above 200:1 measured on bytes
   actually written. Non-log files and nested archives are skipped and listed. Any failure removes everything.
+* **Folder choice:** `POST /api/folders/pick` opens the native dialog only in local mode (the process runs on the
+  user's own desktop); `GET /api/folders` lists sub-folders, in central mode only inside `DLA_SOURCE_ROOTS` and without
+  following links. Both are administrator-only; chosen paths are validated exactly like typed ones.
+* **Search syntax:** search text is never passed to FTS5 as syntax; each term becomes a quoted literal (quotes doubled),
+  short terms use parameterised `LIKE` with escaped wildcards.
 * **Live view:** `/api/tail` opens only files chosen for analysis in that source (or a bundle's files), after resolving
   the path inside the source folder and refusing links; any other name returns 403. Files are opened read-only with
   sharing. Viewers may use it, as it shows the same files their searches cover.

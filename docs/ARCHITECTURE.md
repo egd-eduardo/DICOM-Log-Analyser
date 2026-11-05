@@ -60,6 +60,14 @@ that were not present at choice time are counted as *new* (`new_files`) and repo
 renamed file (its indexed content) and the chosen name. Bundles have no selection and are indexed completely. Schema
 version 2 adds these columns; a version 1 index is upgraded in place.
 
+## Choosing folders
+
+`IFolderPicker` shows the operating system's folder dialog on the computer running the analyser, in local mode only:
+the Windows `IFileOpenDialog` (shared with DICOM CD PACS Transfer), AppleScript `choose folder` on macOS, zenity on
+Linux desktops. The path comes from the dialog, never from the request, and is then validated like a typed path.
+`FolderBrowser` lists sub-folders for the in-app browser (fallback, and central mode, where it is confined to the
+mounted source roots and does not follow links). Both endpoints are administrator-only.
+
 ## Live view and live indexing
 
 * `TailReader` serves the Live tab: the last N complete lines of a file (reading at most 2 MB from the end), then the
@@ -85,13 +93,16 @@ version 2 adds these columns; a version 1 index is upgraded in place.
 | `message`, `detail`, `has_exception` | First line, continuation lines, exception trace detected |
 | `kind` | `0` record, `1` unparsed block |
 
-`events_fts` is an external-content FTS5 table (`unicode61`, diacritics removed) over message, detail, category and
-component, maintained by triggers. Punctuation separates tokens, so a UID or IP becomes a token sequence that the query
-builder searches as an exact phrase.
+`events_fts` is an external-content FTS5 table with the **trigram** tokenizer (diacritics removed) over message,
+detail, category and component, maintained by triggers. Every search term of 3 or more characters is matched as a
+substring anywhere (inside UIDs, IDs and words); shorter terms use a plain `LIKE` scan. Schema version 3 replaced the
+earlier word index and rebuilds it in place on upgrade. The trigram index is larger (about 6 times the indexed log
+volume, against about 3 times before) and the first scan slower; see the measurements below.
 
 ## Search semantics
 
-* All terms must match; `"..."` is an exact phrase, a trailing `*` a prefix, a leading `-` excludes.
+* All terms must match, each as a substring; `"..."` keeps spaces in a phrase, a leading `-` excludes; the category
+  filter is an exact match on the chosen category.
 * Text searches start from the FTS index (identifier look-ups take milliseconds on millions of events); unfiltered
   pages use the time index. Results use keyset pagination on `(sort_ts, id)`. Counts are capped at 200 000.
 * Each response includes per-level counts and **coverage notes** computed from source state, so the UI can state
@@ -128,5 +139,10 @@ format change also runs in this queue, so it never overlaps a scan.
 | Errors only | 25 ms |
 | Term matching every event (for example `2.25`) | 4.4 s |
 | Overview | 3.7 s first time, then served from cache until the index changes |
+
+With the substring (trigram) index, schema version 3, same data: first scan 241 s, index 1 767 MB (5.9 x the log size);
+full accession number 0.18 s; fragments such as `ACC12345`, `StoreScu.Send` or `0.2.17)` 0.03 to 0.12 s; text plus
+category filter 0.6 s; a term matching every event (`2.25`) 2.9 s. With the 5-day limit per folder, a typical
+47 MB folder scans in roughly 40 s with about 280 MB of index.
 
 Plan disk space for the index at roughly three times the indexed log volume.
