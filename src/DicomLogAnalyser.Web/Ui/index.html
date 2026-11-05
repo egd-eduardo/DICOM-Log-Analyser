@@ -14,6 +14,7 @@
     <nav id="tabs" aria-label="Sections">
       <button data-tab="overview" class="active">Overview</button>
       <button data-tab="search">Search</button>
+      <button data-tab="exam">Exam history</button>
       <button data-tab="live">Live</button>
       <button data-tab="sources">Sources</button>
       <button data-tab="import">Import bundle</button>
@@ -60,6 +61,7 @@
       <form id="search-form" class="search-form" autocomplete="off">
         <input id="q" type="search" placeholder="Accession number, patient ID, Study/SOP Instance UID, AE title, IP, text…" maxlength="512" aria-label="Search text">
         <button type="submit" class="primary">Search</button>
+        <button type="button" id="q-exam" class="ghost" title="Plain-language history of the exam whose accession number, patient ID or Study Instance UID is in the search box">Exam history</button>
         <details class="filters">
           <summary>Filters</summary>
           <div class="filter-grid">
@@ -78,6 +80,16 @@
       <div id="search-summary"></div>
       <div class="table-wrap"><table id="results" class="results"><thead><tr><th>Time</th><th>Level</th><th>Source</th><th>Category</th><th>Message</th></tr></thead><tbody></tbody></table></div>
       <div class="row"><button id="more" class="ghost hidden">Load more</button><a id="export" class="button ghost hidden" href="#">Export CSV</a></div>
+    </section>
+
+    <section id="tab-exam" class="panel hidden">
+      <div class="row between"><h1 id="ex-title">Exam history</h1><div id="ex-langs" class="langs" role="group" aria-label="Language"></div></div>
+      <form id="exam-form" class="search-form" autocomplete="off">
+        <input id="ex-q" type="search" maxlength="200" aria-label="Exam identifier">
+        <button id="ex-button" type="submit" class="primary">Show history</button>
+      </form>
+      <p id="ex-hint" class="muted small"></p>
+      <div id="ex-out" aria-live="polite"></div>
     </section>
 
     <section id="tab-live" class="panel hidden">
@@ -173,7 +185,9 @@
       </section>
       <div class="row">
         <button id="m-clean" class="ghost">Delete temporary files only</button>
+        <a id="m-patterns" class="button ghost" href="/api/maintenance/patterns.csv" download>Export message patterns</a>
       </div>
+      <p class="muted small">Message patterns list the kinds of log messages and how often each occurs. Anything containing a digit (IDs, UIDs, dates, times, IP addresses), GUIDs, quoted text and DICOM-style names (SURNAME^GIVEN) are replaced by placeholders. A name or folder path written in another way is not recognised and would remain, so review the file and remove such text before sharing it. The file helps tune how the exam history recognises receipts, sends and failures.</p>
       <div id="m-result"></div>
       <h2>About this installation</h2>
       <ul id="m-about" class="plain"></ul>

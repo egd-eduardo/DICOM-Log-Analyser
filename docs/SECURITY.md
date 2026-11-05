@@ -72,7 +72,9 @@ anything that does not arrive through the access proxy.
 `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, COOP/CORP, `Permissions-Policy` and
 `Cache-Control: no-store` on every response. The UI uses no third-party scripts, fonts or CDNs. All log content is
 inserted with `textContent`; search highlighting builds `<mark>` elements through the DOM, never HTML strings. The
-highlight colour and theme are stored in `localStorage` (preferences only, no data).
+highlight colour, theme and exam summary language are stored in `localStorage` (preferences only, no data). The exam
+summary texts and flag images are embedded in the executable and served from the same fixed allow-list as the page;
+no translation service or external image is used.
 
 ## Input handling
 
@@ -108,6 +110,9 @@ highlight colour and theme are stored in `localStorage` (preferences only, no da
 Routine logs contain source ids, counts and exception **type names** with a correlation reference only, never
 messages, paths, search terms, identities of refused users, or log content. ASP.NET Core framework logging is limited
 to warnings. Error responses are generic with the same reference. The activity record holds actor, action and ids.
+The exam history and its query are not recorded. The message-pattern export (administrators only, recorded with its
+row count) masks anything containing a digit, GUIDs, quoted text and `SURNAME^GIVEN` names; a name or path written
+in another form is not recognised, so the file must be reviewed before it leaves the organisation.
 
 ## OWASP ASVS 5.0 mapping
 

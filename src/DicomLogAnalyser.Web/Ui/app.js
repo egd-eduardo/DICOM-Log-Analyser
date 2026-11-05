@@ -212,6 +212,7 @@ const loaders = /** @type {Record<string, () => Promise<void>>} */ ({
   overview: loadOverview,
   search: async () => { await Promise.all([loadSources(), loadCategories()]); $('q').focus(); },
   live: openLive,
+  exam: async () => { await loadExamLanguages(); $('ex-q').focus(); },
   sources: loadSources,
   import: loadSources,
   maintenance: loadMaintenance,
@@ -899,6 +900,216 @@ async function loadMaintenance() {
   fillTable('m-audit', m.audit, (a) => [a.timestampUtc.replace('T', ' ').slice(0, 19), a.actor, a.action, a.detail || '']);
 }
 
+// ---------- Exam history ----------
+
+/** Exam summary state: language strings (loaded once from this application), chosen language, last result. */
+const exam = { i18n: /** @type {any} */ (null), lang: 'en', data: /** @type {any} */ (null), query: '' };
+
+async function loadExamLanguages() {
+  if (exam.i18n) return;
+  const res = await fetch('/exam-i18n.json', { credentials: 'same-origin', cache: 'no-store' });
+  if (!res.ok) throw new Error('The language file could not be loaded.');
+  exam.i18n = await res.json();
+  const saved = pref('examLang', 'en');
+  exam.lang = exam.i18n.languages[saved] ? saved : 'en';
+  renderLanguageButtons();
+  applyExamLabels();
+}
+
+/** Text in the chosen language (English when a key is missing), with {placeholders} filled in. @param {string} key @param {Record<string, string | number>} [vars] */
+function tr(key, vars) {
+  const langs = exam.i18n.languages;
+  let text = String(langs[exam.lang]?.[key] ?? langs.en[key] ?? key);
+  for (const [k, v] of Object.entries(vars || {})) text = text.split('{' + k + '}').join(String(v));
+  return text;
+}
+
+function renderLanguageButtons() {
+  const box = $('ex-langs');
+  box.replaceChildren();
+  for (const code of exam.i18n.order) {
+    const l = exam.i18n.languages[code];
+    const b = el('button', 'lang');
+    b.type = 'button';
+    b.lang = l.locale;
+    b.dataset.lang = code;
+    b.title = l.name;
+    b.setAttribute('aria-pressed', String(code === exam.lang));
+    const img = /** @type {HTMLImageElement} */ (el('img'));
+    img.src = '/flags/' + l.flag + '.svg';
+    img.alt = '';
+    img.width = 24; img.height = 16;
+    b.append(img, el('span', '', l.name));
+    b.addEventListener('click', () => setExamLanguage(code));
+    box.append(b);
+  }
+}
+
+/** @param {string} code */
+function setExamLanguage(code) {
+  if (!exam.i18n.languages[code]) return;
+  exam.lang = code;
+  savePref('examLang', code);
+  for (const b of $('ex-langs').querySelectorAll('button')) b.setAttribute('aria-pressed', String(/** @type {HTMLElement} */ (b).dataset.lang === code));
+  applyExamLabels();
+  if (exam.data) renderExam();
+}
+
+function applyExamLabels() {
+  const l = exam.i18n.languages[exam.lang];
+  $('tab-exam').lang = l.locale;
+  $('ex-title').textContent = tr('title');
+  $('ex-q').placeholder = tr('placeholder');
+  $('ex-button').textContent = tr('button');
+  $('ex-hint').textContent = tr('hint');
+  $('ex-langs').setAttribute('aria-label', tr('language'));
+}
+
+/** Date and time in the chosen language. Times are UTC, or the source's wall-clock time when its zone is unknown. @param {number | null | undefined} ms */
+function examTime(ms) {
+  if (ms === null || ms === undefined) return tr('none');
+  const locale = exam.i18n.languages[exam.lang].locale;
+  let text;
+  try {
+    text = new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'medium', timeZone: 'UTC' }).format(new Date(ms));
+  } catch { text = utc(ms); }
+  return text + ' ' + (exam.data && !exam.data.utcKnown ? '(' + tr('local') + ')' : tr('utc'));
+}
+
+/** @param {number} ms */
+function duration(ms) {
+  const t = Math.max(0, Math.round(ms / 1000));
+  const p = (/** @type {number} */ n) => String(n).padStart(2, '0');
+  return `${p(Math.floor(t / 3600))}:${p(Math.floor((t % 3600) / 60))}:${p(t % 60)}`;
+}
+
+/** @param {string} milestone camelCase name from the API, for example sendFailed */
+const milestoneKey = (milestone) => 'm_' + milestone.charAt(0).toUpperCase() + milestone.slice(1);
+
+/** @param {string} text */
+async function runExam(text) {
+  const q = (text ?? $('ex-q').value).trim();
+  $('ex-q').value = q;
+  if (q.length < 3) { notify('Enter an accession number, patient ID or Study Instance UID (at least 3 characters).'); return; }
+  await loadExamLanguages();
+  $('ex-out').replaceChildren(el('p', 'muted', '…'));
+  exam.data = await api('/api/exam?q=' + encodeURIComponent(q));
+  exam.query = q;
+  renderExam();
+}
+
+function renderExam() {
+  const d = exam.data;
+  const out = $('ex-out');
+  out.replaceChildren();
+  if (d.entries === 0) {
+    out.append(el('p', 'exam-summary', tr('n_none', { id: exam.query })));
+    renderCoverage(out, d.coverageNotes);
+    return;
+  }
+
+  // Plain-language summary.
+  const summary = el('div', 'exam-summary');
+  summary.append(el('h2', '', tr('summary')));
+  /** @param {string} key @param {Record<string, string | number>} [vars] */
+  const say = (key, vars) => summary.append(el('p', '', tr(key, vars)));
+  say(d.firstReceivedEstimated ? 'n_firstEst' : 'n_first', { time: examTime(d.firstReceivedTs), source: d.firstReceivedSource || '' });
+  if (d.updates === 0) say('n_noUpdate');
+  else say('n_update', { count: d.updates, time: examTime(d.updateTimes[d.updateTimes.length - 1]) });
+  if (!d.seriesKnown && !d.firstReceivedEstimated) say('n_seriesUnknown');
+  if (d.destinations.length === 0) say('n_noSends');
+  for (const s of d.destinations) {
+    say('n_dest', { dest: s.destination, attempts: s.attempts, resends: s.resends, failures: s.failures, result: tr('r_' + s.lastResult), time: examTime(s.lastResultTs) });
+  }
+  if (d.finalSeriesTs !== null && d.finalSeriesTs !== undefined) {
+    say('n_final', { time: examTime(d.finalSeriesTs) });
+    if (d.lastEntryTs !== null && d.lastEntryTs > d.finalSeriesTs) say('n_lastLater', { time: examTime(d.lastEntryTs) });
+    else say('n_noMore');
+  }
+  if (d.truncated) say('n_truncated', { count: d.entries });
+  if (!d.utcKnown) say('n_tzUnknown');
+  summary.append(el('p', 'muted small', tr('n_caveat')));
+  out.append(summary);
+
+  // Key facts; each value opens the log entry it is based on.
+  const facts = el('div', 'cards exam-facts');
+  /** @param {string} key @param {string | number} value @param {number | null} [eventId] */
+  const fact = (key, value, eventId) => {
+    const c = el('div', 'card');
+    const v = el('div', 'n fact');
+    v.append(eventId ? linkEvent(String(value), eventId) : String(value));
+    c.append(v, el('div', 'l', tr(key)));
+    facts.append(c);
+  };
+  fact(d.firstReceivedEstimated ? 'f_firstEst' : 'f_first', examTime(d.firstReceivedTs), d.firstReceivedEventId);
+  fact('f_updates', d.updates);
+  fact('f_series', d.seriesKnown ? d.series.length : tr('none'));
+  fact('f_resends', d.totalResends);
+  fact('f_failures', d.totalFailures);
+  fact('f_final', examTime(d.finalSeriesTs), d.finalSeriesEventId);
+  fact('f_last', examTime(d.lastEntryTs), d.lastEntryEventId);
+  if (d.firstReceivedTs !== null && d.finalSeriesTs !== null && d.finalSeriesTs !== undefined && !d.firstReceivedEstimated) fact('f_duration', duration(d.finalSeriesTs - d.firstReceivedTs));
+  fact('f_entries', num(d.entries));
+  out.append(facts);
+
+  if (d.destinations.length > 0) {
+    out.append(el('h2', '', tr('d_title')));
+    out.append(examTable([tr('d_dest'), tr('d_attempts'), tr('d_resends'), tr('d_failures'), tr('d_last')], d.destinations, (/** @type {any} */ s) => {
+      const res = el('span', s.lastResult === 'failure' ? 'err-text' : s.lastResult === 'success' ? 'ok-text' : 'muted', tr('r_' + s.lastResult));
+      const cell = el('span');
+      cell.append(res);
+      if (s.lastResultEventId) cell.append(' (', linkEvent(examTime(s.lastResultTs), s.lastResultEventId), ')');
+      return [s.destination, s.attempts, s.resends, s.failures, cell];
+    }));
+  }
+
+  if (d.series.length > 0) {
+    out.append(el('h2', '', tr('s_title')));
+    out.append(examTable([tr('s_uid'), tr('s_first'), tr('s_last'), tr('s_receipts'), tr('s_update')], d.series, (/** @type {any} */ s) =>
+      [el('code', '', s.seriesUid), examTime(s.firstTs), examTime(s.lastTs), s.receipts, s.isUpdate ? '✓' : '']));
+  }
+
+  out.append(el('h2', '', tr('t_title')));
+  const timeline = examTable([tr('t_time'), tr('t_event'), tr('t_source'), tr('t_message')], d.timeline, (/** @type {any} */ t) => {
+    const badge = el('span', 'milestone ms-' + t.milestone, tr(milestoneKey(t.milestone)));
+    const cell = el('span');
+    cell.append(badge);
+    if (t.isUpdate) cell.append(' ', el('span', 'milestone ms-update', tr('m_update')));
+    return [examTime(t.event.timestamp), cell, t.event.sourceLabel, t.event.message];
+  }, (/** @type {any} */ t) => t.event.id);
+  timeline.querySelector('table')?.classList.add('results');
+  out.append(timeline);
+  renderCoverage(out, d.coverageNotes);
+}
+
+/** @param {HTMLElement} out @param {string[]} notes */
+function renderCoverage(out, notes) {
+  if (!notes || notes.length === 0) return;
+  out.append(el('h2', '', tr('notes')));
+  const ul = el('ul', 'plain small');
+  for (const n of notes) ul.append(el('li', '', n));
+  out.append(ul);
+}
+
+/** @param {string[]} heads @param {any[]} rows @param {(row: any) => (string | number | Node)[]} cells @param {(row: any) => number} [openId] */
+function examTable(heads, rows, cells, openId) {
+  const wrap = el('div', 'table-wrap');
+  const table = el('table');
+  const tr0 = el('tr');
+  for (const h of heads) tr0.append(el('th', '', h));
+  const thead = el('thead'); thead.append(tr0);
+  const tbody = el('tbody');
+  for (const r of rows) {
+    const row = el('tr');
+    for (const c of cells(r)) { const td = el('td'); td.append(typeof c === 'object' ? c : String(c)); row.append(td); }
+    if (openId) { row.classList.add('clickable'); row.tabIndex = 0; row.addEventListener('click', () => { highlightRegex = null; openEvent(openId(r)).catch((e) => notify(e.message)); }); }
+    tbody.append(row);
+  }
+  table.append(thead, tbody);
+  wrap.append(table);
+  return wrap;
+}
+
 // ---------- Start ----------
 
 async function start() {
@@ -907,6 +1118,8 @@ async function start() {
   $('ov-refresh').addEventListener('click', () => loadOverview().catch((e) => notify(e.message)));
   $('search-form').addEventListener('submit', (/** @type {Event} */ ev) => { ev.preventDefault(); runSearch(false).catch((e) => notify(e.message)); });
   $('more').addEventListener('click', () => runSearch(true).catch((e) => notify(e.message)));
+  $('exam-form').addEventListener('submit', (/** @type {Event} */ ev) => { ev.preventDefault(); runExam(undefined).catch((e) => notify(e.message)); });
+  $('q-exam').addEventListener('click', () => { const q = $('q').value.trim(); showTab('exam'); if (q) runExam(q).catch((e) => notify(e.message)); });
   $('d-close').addEventListener('click', () => $('detail').close());
   for (const id of ['d-prev', 'd-next']) $(id).addEventListener('click', () => { const v = Number($(id).dataset.id); if (v) openEvent(v).catch((e) => notify(e.message)); });
   $('scan-all').addEventListener('click', () => api('/api/scan', { method: 'POST', body: '{}' }).then(() => { notify('Scan queued.', true); pollScan(); }).catch((e) => notify(e.message)));

@@ -64,6 +64,21 @@ public static class Endpoints
 
         api.MapGet("/overview", (OverviewService overview) => Results.Json(overview.Build()));
 
+        // Exam history: first receipt, updates (new series), resends per destination, final series, with evidence.
+        api.MapGet("/exam", (HttpContext ctx, Core.Exam.ExamHistoryService exams) =>
+        {
+            var q = ctx.Request.Query["q"].ToString().Trim();
+            if (q.Length < 3 || q.Length > 200) return Bad("Enter an accession number, patient ID or Study Instance UID (3 to 200 characters).");
+            var ids = new List<long>();
+            foreach (var part in ctx.Request.Query["sources"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!long.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out var id) || ids.Count >= 100) return Bad("Invalid source list.");
+                ids.Add(id);
+            }
+
+            return Results.Json(exams.Build(q, ids.Count > 0 ? ids : null));
+        });
+
         api.MapGet("/categories", (OverviewService overview) => Results.Json(overview.Categories()));
 
         api.MapGet("/search", (HttpContext ctx, SearchService search) =>
@@ -375,6 +390,23 @@ public static class Endpoints
             tempBytes = DirectorySize(paths.TempDirectory),
             audit = audit.Recent(200),
         }));
+
+        // Masked message patterns (no identifiers) to share for tuning the exam-history rules.
+        admin.MapGet("/maintenance/patterns.csv", async (HttpContext ctx, OverviewService overview, AuditLog audit) =>
+        {
+            var rows = overview.MessagePatterns();
+            ctx.Response.ContentType = "text/csv; charset=utf-8";
+            ctx.Response.Headers.ContentDisposition = "attachment; filename=\"dicom-log-message-patterns.csv\"";
+            var writer = new StreamWriter(ctx.Response.Body, new UTF8Encoding(encoderShouldEmitUTF8Identifier: true), 65536);
+            await using (writer.ConfigureAwait(false))
+            {
+                await writer.WriteLineAsync("format,category,level,count,pattern").ConfigureAwait(false);
+                foreach (var (format, category, level, pattern, count) in rows)
+                    await writer.WriteLineAsync(string.Join(',', Csv(format), Csv(category), Csv(level), count.ToString(CultureInfo.InvariantCulture), Csv(pattern))).ConfigureAwait(false);
+            }
+
+            audit.Write(SecurityMiddleware.CurrentSession(ctx).Identity, "patterns_exported", new Dictionary<string, object?> { ["rows"] = rows.Count });
+        });
 
         admin.MapPost("/maintenance/clean-temp", (HttpContext ctx, AppPaths paths, AuditLog audit, ImportTracker tracker) =>
         {

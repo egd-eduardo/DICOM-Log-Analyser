@@ -108,6 +108,28 @@ volume, against about 3 times before) and the first scan slower; see the measure
 * Each response includes per-level counts and **coverage notes** computed from source state, so the UI can state
   whether "no result" might be caused by a gap rather than by absence of the event.
 
+## Exam history
+
+`ExamHistoryService` (Core, `Exam/ExamHistory.cs`) builds the history of one exam from the index, with the definitions
+agreed for this product:
+
+* **Entered the queue**: the first entry recognised as a receipt of the study.
+* **Updated**: a new series received in a later *arrival wave*. Receipts closer than 2 minutes belong to the same wave
+  (one transfer); a later wave that brings a series not seen before is one update.
+* **Resent**: a further send result for the same series (or for the study, when the log does not name the series) to
+  the same destination.
+* **Final**: the last series receipt; no further arrivals after it. The last related entry is reported separately.
+
+Collection uses the substring search, then keeps only entries in which the identifier appears as a whole token
+(`(?<![A-Za-z0-9.])id(?![A-Za-z0-9])`), and adds entries that name only a Study Instance UID found in those entries (at
+most 10 UIDs, 5 000 entries; beyond that the result is marked truncated). Each entry gets a milestone (received,
+queued, send, send failed, sent, retry, duplicate, other) from generic English wording and its level, plus the series
+UID and destination when written. All regular expressions have a 250 ms timeout. The API (`GET /api/exam?q=`) returns
+facts and event ids only; the browser writes the narrative from `exam-i18n.json` (11 languages, identical keys and
+placeholders, checked by a test) and shows the flags from `/flags/*.svg`, both embedded and served from the fixed
+allow-list. `GET /api/maintenance/patterns.csv` (administrators) exports message patterns with digits, UIDs, GUIDs,
+quoted text and `SURNAME^GIVEN` names masked, to tune the wording rules against real logs.
+
 ## Scan queue
 
 `ScanCoordinator` (a hosted background service) runs scans, source deletions and purges one at a time from a bounded

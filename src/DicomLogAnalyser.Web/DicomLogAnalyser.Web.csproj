@@ -23,7 +23,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <EmbeddedResource Include="Ui\**\*" LogicalName="ui/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Ui\*" LogicalName="ui/%(Filename)%(Extension)" />
+    <EmbeddedResource Include="Ui\flags\*.svg" LogicalName="ui/flags/%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>
