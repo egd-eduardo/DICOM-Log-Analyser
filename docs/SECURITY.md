@@ -116,7 +116,8 @@ Routine logs contain source ids, counts and exception **type names** with a corr
 messages, paths, search terms, identities of refused users, or log content. ASP.NET Core framework logging is limited
 to warnings. Error responses are generic with the same reference. The activity record holds actor, action and ids.
 The exam history and its query are not recorded. The message-pattern export (administrators only, recorded with its
-row count) masks anything containing a digit, GUIDs, quoted text and `SURNAME^GIVEN MIDDLE` names (up to the modality code); a name or path written
+row count) masks anything containing a digit, GUIDs, quoted text, `SURNAME^GIVEN MIDDLE` names (up to the modality code)
+and name-like key/value pairs such as `patientName=SYNTHETIC PERSON`; a name or path written
 in another form is not recognised, so the file must be reviewed before it leaves the organisation.
 
 ## OWASP ASVS 5.0 mapping

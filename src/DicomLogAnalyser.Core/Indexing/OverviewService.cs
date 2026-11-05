@@ -198,6 +198,10 @@ public sealed partial class OverviewService(IndexDatabase db)
     [GeneratedRegex(@"[A-Za-z]*\d[\w\-]*", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 250)]
     private static partial Regex Numberish();
 
+    /// <summary>Name-like key/value pairs such as "patientName=SYNTHETIC PERSON" or "PhysicianName: SYNTHETIC", up to the next separator.</summary>
+    [GeneratedRegex(@"\b(?<key>\w*name)\s*[=:]\s*[^,;|\[\]\r\n]+", RegexOptions.CultureInvariant | RegexOptions.IgnoreCase, matchTimeoutMilliseconds: 250)]
+    private static partial Regex NamedValue();
+
     [GeneratedRegex(@"(['""])[^'""]{0,200}\1", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 250)]
     private static partial Regex Quoted();
 
@@ -212,6 +216,7 @@ public sealed partial class OverviewService(IndexDatabase db)
         {
             var s = UidOrIp().Replace(message, "<uid/ip>");
             s = Guid().Replace(s, "<guid>");
+            s = NamedValue().Replace(s, "${key}=<name>");
             s = PersonName().Replace(s, "<name>");
             s = Quoted().Replace(s, "'…'");
             s = Numberish().Replace(s, "#");

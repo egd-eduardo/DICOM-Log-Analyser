@@ -139,6 +139,20 @@ placeholders, checked by a test) and shows the flags from `/flags/*.svg`, both e
 allow-list. `GET /api/maintenance/patterns.csv` (administrators) exports message patterns with digits, UIDs, GUIDs,
 quoted text and `SURNAME^GIVEN MIDDLE` names (up to the modality code) masked, to tune the wording rules against real logs.
 
+## Modality worklist (VIDAcare Connector)
+
+`VidacareConnectorFormat` reads `yyyy-MM-dd HH:mm:ss,fff [thread] LEVEL Logger - message | memory`: the thread becomes
+the component, the logger the category, and the trailing memory counter is removed; dataset dumps and association
+details are continuation lines. `WorklistAnalysis` (Core, `Worklist/`) reads the events of files in this format for the
+chosen period (one read snapshot, at most 400 000 events) and rebuilds each association: lines carrying `AE(n)` or
+`Association(n)` link to association *n* of that file ("accepted" starts a new one, as numbers restart with the
+connector); other lines link through the thread serving the association. It takes the calling and called AE from
+`A-ASSOCIATE-RQ X >> Y`, the address from "accepted", the software from `implVersionName`, queries and echoes from
+`C-FIND-RQ` and `C-ECHO-RQ`, the query keys from the `DicomServiceRegistry` dataset, one item per `C-FIND-RSP` with
+status `FF00H`/`FF01H` (its dataset follows on the same thread), the final status, and `Loading data for X`.
+Associations the connector initiates itself are excluded. `GET /api/worklist?hours=` returns equipment, findings and
+the 300 most recent associations; the UI refreshes it every 10 seconds while the tab is open.
+
 ## Scan queue
 
 `ScanCoordinator` (a hosted background service) runs scans, source deletions and purges one at a time from a bounded
