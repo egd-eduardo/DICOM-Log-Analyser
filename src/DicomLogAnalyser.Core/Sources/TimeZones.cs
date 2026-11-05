@@ -71,6 +71,9 @@ public static class TimeZones
     {
         var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var z in TimeZoneInfo.GetSystemTimeZones()) names.Add(z.Id);
+
+        // The server's own zone can be an alias missing from the list above (macOS reports "Universal").
+        names.Add(Server.Id);
         foreach (var iana in IanaToWindows.Keys)
         {
             if (Resolve(iana) is not null) names.Add(iana);

@@ -26,9 +26,9 @@ These checks were actually run; nothing below is assumed.
 
 | Check | Result |
 |---|---|
-| Secret/PHI scan | Passed (114 files on 2026-11-05; 83 files on 2026-11-04). A planted file with a real-looking UID, a non-synthetic name, a public IP, a private-key header and a password was correctly rejected (5 findings). |
+| Secret/PHI scan | Passed (116 files on 2026-11-05; 83 files on 2026-11-04). A planted file with a real-looking UID, a non-synthetic name, a public IP, a private-key header and a password was correctly rejected (5 findings). |
 | Locked restore, format, build | Passed, no warnings |
-| Tests | 229 passed, 0 failed (2026-11-05; 159 on 2026-11-04) |
+| Tests | 233 passed, 0 failed (2026-11-05; 159 on 2026-11-04) |
 | Vulnerable packages (NuGet, transitive) | None reported |
 | npm audit (TypeScript) | 0 vulnerabilities |
 | UI type check | Passed, after fixing seven type errors it found |

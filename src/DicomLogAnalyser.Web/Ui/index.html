@@ -185,6 +185,7 @@
       </section>
       <div class="row">
         <button id="m-clean" class="ghost">Delete temporary files only</button>
+        <button id="m-stop" class="ghost hidden" type="button">Stop the analyser</button>
         <a id="m-patterns" class="button ghost" href="/api/maintenance/patterns.csv" download>Export message patterns</a>
       </div>
       <p class="muted small">Message patterns list the kinds of log messages and how often each occurs. Anything containing a digit (IDs, UIDs, dates, times, IP addresses), GUIDs, quoted text and DICOM-style names (SURNAME^GIVEN, including further given names up to the modality code) are replaced by placeholders. A name or folder path written without a ^ is not recognised and would remain, so review the file and remove such text before sharing it. The file helps tune how the exam history recognises receipts, sends and failures.</p>

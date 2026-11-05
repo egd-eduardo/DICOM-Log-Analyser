@@ -60,6 +60,22 @@ public sealed class WebSecurityTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Stop_from_the_browser_stops_the_local_instance()
+    {
+        var (cookie, csrf) = await SignIn();
+        var stopping = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _app.Lifetime.ApplicationStopping.Register(() => stopping.TrySetResult());
+        using var req = new HttpRequestMessage(HttpMethod.Post, Base + "/api/maintenance/stop");
+        req.Headers.Add("Cookie", cookie);
+        req.Headers.Add("Origin", Base);
+        req.Headers.Add(SecurityMiddleware.CsrfHeader, csrf);
+        req.Content = JsonContent.Create(new { });
+        using (var res = await _http.SendAsync(req)) Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        await stopping.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Contains(_app.Services.GetRequiredService<DicomLogAnalyser.Core.Diagnostics.AuditLog>().Recent(5), a => a.Action == "stopped");
+    }
+
+    [Fact]
     public async Task Time_zone_list_offers_the_server_zone_and_accepted_names()
     {
         var (cookie, _) = await SignIn();
@@ -441,6 +457,7 @@ public sealed class ServerModeTests : IAsyncLifetime
     [InlineData("POST", "/api/folders/pick")]
     [InlineData("GET", "/api/folders")]
     [InlineData("GET", "/api/maintenance/patterns.csv")]
+    [InlineData("POST", "/api/maintenance/stop")]
     public async Task Viewers_cannot_change_export_or_administer(string method, string path)
     {
         await Start("127.0.0.1/32");
@@ -476,6 +493,8 @@ public sealed class ServerModeTests : IAsyncLifetime
             Assert.Contains("secret-share-name", await src.Content.ReadAsStringAsync(), StringComparison.Ordinal);
         using (var scan = await Send(HttpMethod.Post, "/api/scan", "admin@example.org", new { })) Assert.Equal(HttpStatusCode.Accepted, scan.StatusCode);
         using (var m = await Send(HttpMethod.Get, "/api/maintenance", "admin@example.org")) Assert.Equal(HttpStatusCode.OK, m.StatusCode);
+        using (var stop = await Send(HttpMethod.Post, "/api/maintenance/stop", "admin@example.org", new { })) Assert.Equal(HttpStatusCode.NotFound, stop.StatusCode);
+        Assert.False(_app.Lifetime.ApplicationStopping.IsCancellationRequested);
     }
 
     [Fact]

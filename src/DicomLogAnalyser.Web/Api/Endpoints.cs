@@ -421,6 +421,19 @@ public static class Endpoints
             audit.Write(SecurityMiddleware.CurrentSession(ctx).Identity, "patterns_exported", new Dictionary<string, object?> { ["rows"] = rows.Count });
         });
 
+        // Local mode: stop the analyser from the browser (same as Q or closing its window).
+        admin.MapPost("/maintenance/stop", (HttpContext ctx, AppRuntime rt, IHostApplicationLifetime lifetime, AuditLog audit) =>
+        {
+            if (rt.Options.Mode != AppMode.Local) return Results.NotFound();
+            audit.Write(SecurityMiddleware.CurrentSession(ctx).Identity, "stopped");
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(300).ConfigureAwait(false);
+                lifetime.StopApplication();
+            });
+            return Results.Json(new { stopping = true });
+        });
+
         admin.MapPost("/maintenance/clean-temp", (HttpContext ctx, AppPaths paths, AuditLog audit, ImportTracker tracker) =>
         {
             if (tracker.Active > 0) return Results.Conflict(new { error = "busy", message = "An import is in progress. Try again when it has finished." });

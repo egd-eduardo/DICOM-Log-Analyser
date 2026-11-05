@@ -1204,6 +1204,13 @@ async function start() {
   $('imp-form').addEventListener('submit', (/** @type {Event} */ ev) => { ev.preventDefault(); upload(); });
   $('m-clean').addEventListener('click', () => api('/api/maintenance/clean-temp', { method: 'POST', body: '{}' }).then((r) => { notify(r.remaining ? `${r.remaining} item(s) could not be removed.` : 'Temporary files deleted.', true); loadMaintenance(); }).catch((e) => notify(e.message)));
   $('fs-start').addEventListener('click', startFreshSession);
+  $('m-stop').addEventListener('click', async () => {
+    if (!window.confirm('Stop DICOM Log Analyser on this computer? Searches stop working until it is started again; indexed data is kept.')) return;
+    try {
+      await api('/api/maintenance/stop', { method: 'POST', body: '{}' });
+      document.querySelector('main')?.replaceChildren(el('p', 'notice info', 'DICOM Log Analyser has stopped. You can close this tab; start the program again to continue.'));
+    } catch (e) { notify(/** @type {Error} */ (e).message); }
+  });
 
   try {
     session = await api('/api/session');
@@ -1213,6 +1220,7 @@ async function start() {
     const note = el('p', 'muted small', 'You have read-only access (viewer): overview, search and event details. Adding sources, importing, exporting and deleting need the administrator role.');
     $('tab-overview').insertBefore(note, $('ov-cards'));
   }
+  $('m-stop').classList.toggle('hidden', session.mode !== 'local');
   const fmt = $('s-format');
   for (const f of session.formats) fmt.append(new Option(f.name, f.id));
   $('s-path-help').textContent = session.mode === 'server'

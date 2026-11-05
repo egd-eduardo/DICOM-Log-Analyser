@@ -80,7 +80,17 @@ repositories); it is then verified with `gh attestation verify <file> --repo egd
    `%LOCALAPPDATA%\Programs\DicomLogAnalyser`.
 2. Double-click **Start DICOM Log Analyser.cmd** (or `DicomLogAnalyser.exe`). A console window shows the status and
    your default browser opens, already signed in. No administrator rights and no .NET installation are needed.
-3. Keep the console window open. Press **O** in it to open the interface again; close it (or Ctrl+C) to stop.
+3. Keep the console window open. Press **O** in it to open the interface again and **Q** to stop; closing the window,
+   Ctrl+C or **Stop the analyser** (Maintenance tab) also stop it, within at most 10 seconds even during a scan.
+   Starting it a second time simply opens the browser on the copy that is already running. Clicking inside the window
+   no longer pauses the program (Windows QuickEdit is switched off for this window).
+
+**Several people on the same computer** (for example a Windows server with Remote Desktop): each Windows user starts
+their own copy. Each copy has its own data folder (`%LOCALAPPDATA%\DicomLogAnalyser`), its own random port and its own
+sign-in, so copies do not interfere and one user cannot open another user's copy: the loopback port is reachable by
+other sessions on the computer, but it accepts only the one-time sign-in link printed in its owner's window and the
+session cookie that follows. Each copy builds its own index of the same read-only log files, so disk use and the first
+scan are multiplied by the number of users; for a shared team view use the central mode instead.
 
 The packages are not code-signed yet: Windows SmartScreen may show "Windows protected your PC"; choose **More info**,
 then **Run anyway** (first time only). Use a build signed with your organisation's certificate for wider distribution.
