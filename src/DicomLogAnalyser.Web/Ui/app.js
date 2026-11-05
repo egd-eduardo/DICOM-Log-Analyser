@@ -170,13 +170,37 @@ function localTimeZone() {
   } catch { return ''; }
 }
 
-/** Pre-fills a time-zone field for new sources and bundles; the value can always be changed. @param {string} inputId @param {string} helpId */
-function prefillTimeZone(inputId, helpId) {
-  const tz = localTimeZone();
-  if (tz && !$(inputId).value) $(inputId).value = tz;
-  $(helpId).textContent = tz
-    ? `Pre-filled with this computer's time zone (${tz}). Change it if the logs were written in another time zone. DICOM Router logs include their own offset and ignore this setting.`
-    : 'Enter the time zone in which the logs were written, for example Europe/Lisbon.';
+/** Time zones this server accepts (loaded once): its own zone and whether the browser's zone is usable here. */
+/** @type {{server: {id: string, name: string}, preferred: string | null, names: string[]} | null} */
+let serverZones = null;
+
+async function loadServerZones() {
+  if (serverZones) return serverZones;
+  serverZones = await api('/api/timezones?prefer=' + encodeURIComponent(localTimeZone()));
+  const list = $('tz-list');
+  list.replaceChildren();
+  for (const z of serverZones.names) list.append(new Option(z));
+  return serverZones;
+}
+
+/**
+ * Pre-fills a time-zone field for new sources and bundles; the value can always be changed. Uses this computer's
+ * (browser) zone when the server recognises it, otherwise the server's own time zone from its operating system.
+ * @param {string} inputId @param {string} helpId
+ */
+async function prefillTimeZone(inputId, helpId) {
+  const browser = localTimeZone();
+  let zones = null;
+  try { zones = await loadServerZones(); } catch { /* list unavailable: free text only */ }
+  if (!zones) {
+    if (browser && !$(inputId).value) $(inputId).value = browser;
+    return;
+  }
+  const value = zones.preferred || zones.server.id;
+  if (!$(inputId).value) $(inputId).value = value;
+  $(helpId).textContent = zones.preferred
+    ? `Pre-filled with this computer's time zone (${value}). Change it if the logs were written in another time zone. DICOM Router logs include their own offset and ignore this setting.`
+    : `Pre-filled with the server's time zone (${zones.server.id}, ${zones.server.name}), read from its operating system${browser ? `; this server does not recognise the browser's zone ${browser}` : ''}. Change it if the logs were written in another time zone; the list shows every name this server accepts.`;
 }
 
 // ---------- Formatting ----------
@@ -1191,8 +1215,6 @@ async function start() {
   }
   const fmt = $('s-format');
   for (const f of session.formats) fmt.append(new Option(f.name, f.id));
-  const tzl = $('tz-list');
-  try { for (const z of /** @type {any} */ (Intl).supportedValuesOf('timeZone')) tzl.append(new Option(z)); } catch { /* older browser: free text only */ }
   $('s-path-help').textContent = session.mode === 'server'
     ? 'Container path inside ' + session.sourceRoots.join(' or ') + ' (a read-only volume in compose.yaml). Windows drive letters and UNC paths cannot be used directly here.'
     : session.platform === 'windows' ? 'Examples: C:\\3dnet\\DicomRouter\\logs, Z:\\3dnet\\audits\\Gateway\\0 or \\\\server\\share\\logs'

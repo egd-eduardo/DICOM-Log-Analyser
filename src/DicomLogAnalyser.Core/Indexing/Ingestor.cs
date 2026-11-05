@@ -125,8 +125,7 @@ public sealed class Ingestor(IndexDatabase db, SourceRepository sources, TimePro
         return summary;
     }
 
-    public static TimeZoneInfo? ResolveTimeZone(string? id) =>
-        !string.IsNullOrEmpty(id) && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var tz) ? tz : null;
+    public static TimeZoneInfo? ResolveTimeZone(string? id) => TimeZones.Resolve(id);
 
     private void ProcessFile(SourceDefinition source, FileState state, FileInfo file, TimeZoneInfo? tz, ILogFormat? hint, ScanSummary summary,
         IProgress<ScanProgress>? progress, int done, int total, CancellationToken ct)

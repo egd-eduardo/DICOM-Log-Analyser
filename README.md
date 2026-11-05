@@ -137,8 +137,11 @@ them. A chosen file keeps being analysed after log rotation, under its original 
 you choose their content when you create the zip.
 
 **Check the time zone** for B3DWEB Gateway sources: their timestamps have no UTC offset. For a new source or bundle
-the field is pre-filled with the time zone of the computer running the browser (for example `Europe/Lisbon`); change
-it when the logs were written elsewhere. Editing a source shows its saved time zone.
+the field is pre-filled with the time zone of the computer running the browser (for example `Europe/Lisbon`) when the
+server recognises it, otherwise with the server's own time zone read from its operating system; change it when the
+logs were written elsewhere. The list offers every name the server accepts. Both forms work: IANA (`Europe/Lisbon`) and
+Windows (`GMT Standard Time`). Windows Server 2016 cannot translate IANA names by itself (it lacks the ICU library);
+a built-in table covers the European zones, and Windows names always work there. Editing a source shows its saved time zone.
 Without it, their times are shown as written and flagged as "local, zone unknown". DICOM Router timestamps include
 their offset and are always placed correctly on the UTC timeline. Changing the time zone re-indexes the source.
 

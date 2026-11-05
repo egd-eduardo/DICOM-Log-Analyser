@@ -55,7 +55,8 @@ public sealed partial class PathValidator
     public static string? CheckTimeZone(string? tz)
     {
         if (string.IsNullOrEmpty(tz)) return null;
-        if (tz.Length > 64 || !TimeZoneInfo.TryFindSystemTimeZoneById(tz, out _)) return "Unknown time zone. Use an IANA name such as Europe/Lisbon or a Windows name such as GMT Standard Time.";
+        if (TimeZones.Resolve(tz) is null)
+            return "This server does not recognise this time zone name. Choose one from the list, which shows the names this server accepts (for Lisbon: Europe/Lisbon, or GMT Standard Time on Windows).";
         return null;
     }
 

@@ -81,6 +81,19 @@ public static class Endpoints
 
         api.MapGet("/categories", (OverviewService overview) => Results.Json(overview.Categories()));
 
+        // Time-zone names this server accepts, its own time zone, and whether the browser's zone is usable here.
+        api.MapGet("/timezones", (HttpContext ctx) =>
+        {
+            var prefer = ctx.Request.Query["prefer"].ToString().Trim();
+            var server = Core.Sources.TimeZones.Server;
+            return Results.Json(new
+            {
+                server = new { id = server.Id, name = server.DisplayName },
+                preferred = prefer.Length is > 0 and <= 64 && Core.Sources.TimeZones.Resolve(prefer) is not null ? prefer : null,
+                names = Core.Sources.TimeZones.KnownNames(),
+            });
+        });
+
         api.MapGet("/search", (HttpContext ctx, SearchService search) =>
         {
             var (request, error) = ParseSearch(ctx.Request.Query);
