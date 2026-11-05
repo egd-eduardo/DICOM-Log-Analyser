@@ -120,6 +120,15 @@ agreed for this product:
   the same destination.
 * **Final**: the last series receipt; no further arrivals after it. The last related entry is reported separately.
 
+Entries are classified in this order: duplicate, retry, **query** (C-FIND), **queued** (a send or upload job),
+send failed, sent, send attempt (C-STORE, upload), **retrieve request** (C-MOVE, C-GET), received, other. Queries and
+retrieve requests never count as receipts, so repeated queries do not create false updates. Zero counters such as
+`0 Fail`, `0 Warn` or `Warnings: 0` are ignored when looking for failure words. The series is read from `SeriesInstanceUID`
+or `SeUID`, the study from `StudyInstanceUID`, `StudyInstanceUid -` or `StUID`, the destination from `to X`,
+`destination X` or `Dest AET X`; uploads are reported under "Cloud upload". A send without a series UID after an update
+is counted as a new send, not a resend. Queries, retrievals or sends before the first receipt are reported, because they
+show that the study existed before the indexed period.
+
 Collection uses the substring search, then keeps only entries in which the identifier appears as a whole token
 (`(?<![A-Za-z0-9.])id(?![A-Za-z0-9])`), and adds entries that name only a Study Instance UID found in those entries (at
 most 10 UIDs, 5 000 entries; beyond that the result is marked truncated). Each entry gets a milestone (received,
@@ -128,7 +137,7 @@ UID and destination when written. All regular expressions have a 250 ms timeout.
 facts and event ids only; the browser writes the narrative from `exam-i18n.json` (11 languages, identical keys and
 placeholders, checked by a test) and shows the flags from `/flags/*.svg`, both embedded and served from the fixed
 allow-list. `GET /api/maintenance/patterns.csv` (administrators) exports message patterns with digits, UIDs, GUIDs,
-quoted text and `SURNAME^GIVEN` names masked, to tune the wording rules against real logs.
+quoted text and `SURNAME^GIVEN MIDDLE` names (up to the modality code) masked, to tune the wording rules against real logs.
 
 ## Scan queue
 

@@ -1014,6 +1014,7 @@ function renderExam() {
   /** @param {string} key @param {Record<string, string | number>} [vars] */
   const say = (key, vars) => summary.append(el('p', '', tr(key, vars)));
   say(d.firstReceivedEstimated ? 'n_firstEst' : 'n_first', { time: examTime(d.firstReceivedTs), source: d.firstReceivedSource || '' });
+  if (d.priorActivityTs !== null && d.priorActivityTs !== undefined) say('n_prior', { time: examTime(d.priorActivityTs) });
   if (d.updates === 0) say('n_noUpdate');
   else say('n_update', { count: d.updates, time: examTime(d.updateTimes[d.updateTimes.length - 1]) });
   if (!d.seriesKnown && !d.firstReceivedEstimated) say('n_seriesUnknown');
@@ -1021,6 +1022,7 @@ function renderExam() {
   for (const s of d.destinations) {
     say('n_dest', { dest: s.destination, attempts: s.attempts, resends: s.resends, failures: s.failures, result: tr('r_' + s.lastResult), time: examTime(s.lastResultTs) });
   }
+  if (d.firstQueuedTs !== null && d.firstQueuedTs !== undefined) say('n_queued', { time: examTime(d.firstQueuedTs) });
   if (d.finalSeriesTs !== null && d.finalSeriesTs !== undefined) {
     say('n_final', { time: examTime(d.finalSeriesTs) });
     if (d.lastEntryTs !== null && d.lastEntryTs > d.finalSeriesTs) say('n_lastLater', { time: examTime(d.lastEntryTs) });

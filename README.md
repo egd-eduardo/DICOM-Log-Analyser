@@ -42,6 +42,9 @@
   the choice is remembered by the browser. The interpretation is derived from the wording of the log entries
   (receipt, send, failure, retry and duplicate messages), so it is an aid to reading the evidence, not a verdict; the
   non-English texts were machine-written and should be reviewed by native speakers before clinical teams rely on them.
+  Queries (C-FIND) and retrieve requests (C-MOVE) are shown in the timeline but never counted as receipts; activity
+  before the first receipt is pointed out, since the study may then predate the indexed days. The recognition follows
+  the B3DWEB Gateway wording (`Receiving`, `Adding upload job`, `Beg/End upload`, `C-STORE-RQ … Dest AET`).
   Administrators can export masked **message patterns** (Maintenance) to help tune the recognition.
 * Overview: event, error and warning counts, per-source coverage, errors per day, categories/components, most
   frequent error patterns (identifiers masked) and files with read or parse problems.

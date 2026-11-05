@@ -162,3 +162,4 @@ tr.clickable:hover, tr.clickable:focus { background: var(--panel-2); }
 .ms-sendFailed { border-color: var(--danger); color: var(--danger); }
 .ms-retry, .ms-duplicate { border-color: var(--warn); color: var(--warn); }
 .ms-update { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.ms-query, .ms-retrieve { color: var(--muted); }
