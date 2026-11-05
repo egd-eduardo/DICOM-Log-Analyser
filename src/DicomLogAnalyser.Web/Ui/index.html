@@ -1,0 +1,190 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DICOM Log Analyser</title>
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/app.css">
+  <script type="module" src="/app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand">DICOM Log Analyser</div>
+    <nav id="tabs" aria-label="Sections">
+      <button data-tab="overview" class="active">Overview</button>
+      <button data-tab="search">Search</button>
+      <button data-tab="live">Live</button>
+      <button data-tab="sources">Sources</button>
+      <button data-tab="import">Import bundle</button>
+      <button data-tab="maintenance">Maintenance</button>
+    </nav>
+    <div class="prefs">
+      <label class="hl-label" title="Colour used to highlight the searched text">Highlight
+        <span id="swatches" class="swatches"></span>
+        <input type="color" id="hl-custom" aria-label="Custom highlight colour">
+      </label>
+      <button id="theme-toggle" class="ghost" title="Switch between dark and light background">Light</button>
+    </div>
+  </header>
+
+  <div id="scanbar" class="scanbar hidden" role="status" aria-live="polite"></div>
+  <div id="notice" class="notice hidden" role="alert"></div>
+
+  <main>
+    <section id="tab-signin" class="panel hidden">
+      <h1>Open the analyser from its window</h1>
+      <p>This page needs a sign-in link from the DICOM Log Analyser program running on this computer. Go to its window and press <kbd>O</kbd>; your browser opens already signed in. No password is used.</p>
+      <p class="muted">Central installation: your organisation's sign-in did not reach the analyser. Reload the page or contact the administrator.</p>
+    </section>
+
+    <section id="tab-overview" class="panel">
+      <div class="row between"><h1>Overview</h1><button id="ov-refresh" class="ghost">Refresh</button></div>
+      <div id="ov-cards" class="cards"></div>
+      <div id="ov-gaps"></div>
+      <h2>Sources</h2>
+      <div class="table-wrap"><table id="ov-sources"><thead><tr><th>Source</th><th>Status</th><th>Events</th><th>Errors</th><th>Warnings</th><th>Indexed period</th><th>Files</th><th>Last scan</th></tr></thead><tbody></tbody></table></div>
+      <div class="grid2">
+        <div><h2>Errors and warnings per day</h2><div id="ov-days" class="bars"></div></div>
+        <div><h2>Categories / components</h2><div class="table-wrap"><table id="ov-cats"><thead><tr><th>Category</th><th>Events</th><th>Errors</th><th>Warnings</th></tr></thead><tbody></tbody></table></div></div>
+      </div>
+      <h2>Most frequent errors</h2>
+      <p class="muted small">Similar messages are grouped; identifiers, numbers and names are masked as #, &lt;uid/ip&gt; or &lt;name&gt;.</p>
+      <div class="table-wrap"><table id="ov-top"><thead><tr><th>Count</th><th>Category</th><th>Message pattern</th><th>Last</th></tr></thead><tbody></tbody></table></div>
+      <h2>Files with read or parse problems</h2>
+      <div class="table-wrap"><table id="ov-problems"><thead><tr><th>Source</th><th>File</th><th>Status</th><th>Unparsed lines</th><th>Details</th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section id="tab-search" class="panel hidden">
+      <h1>Search events</h1>
+      <form id="search-form" class="search-form" autocomplete="off">
+        <input id="q" type="search" placeholder="Accession number, patient ID, Study/SOP Instance UID, AE title, IP, text…" maxlength="512" aria-label="Search text">
+        <button type="submit" class="primary">Search</button>
+        <details class="filters">
+          <summary>Filters</summary>
+          <div class="filter-grid">
+            <label>Minimum level <select id="f-level"><option value="">Any</option><option value="info">Info</option><option value="warning">Warning</option><option value="error">Error</option></select></label>
+            <label>Source <select id="f-source"><option value="">All sources</option></select></label>
+            <label>Category <input id="f-category" maxlength="200" placeholder="e.g. SCU, RouterScp"></label>
+            <label>From (UTC) <input id="f-from" type="datetime-local" step="1"></label>
+            <label>To (UTC) <input id="f-to" type="datetime-local" step="1"></label>
+            <label>Order <select id="f-order"><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label>
+            <label class="check"><input id="f-exc" type="checkbox"> Only events with an exception</label>
+            <label class="check"><input id="f-unparsed" type="checkbox" checked> Include unparsed lines</label>
+          </div>
+        </details>
+      </form>
+      <p class="muted small">Tips: every word must match. Use "quotes" for an exact phrase, a trailing * for a prefix (ACC12*), and -word to exclude. Dots and other punctuation in UIDs and IPs are handled automatically.</p>
+      <div id="search-summary"></div>
+      <div class="table-wrap"><table id="results" class="results"><thead><tr><th>Time</th><th>Level</th><th>Source</th><th>Category</th><th>Message</th></tr></thead><tbody></tbody></table></div>
+      <div class="row"><button id="more" class="ghost hidden">Load more</button><a id="export" class="button ghost hidden" href="#">Export CSV</a></div>
+    </section>
+
+    <section id="tab-live" class="panel hidden">
+      <h1>Live view</h1>
+      <p class="muted small">Follows a log file as it is written, like a tail viewer: new lines appear every second. The file is read directly and only read. Errors are red, warnings amber; text you enter under Highlight is marked in your highlight colour.</p>
+      <div class="live-controls">
+        <label>Source <select id="lv-source"></select></label>
+        <label>File <select id="lv-file"></select></label>
+        <label>Lines <select id="lv-lines"><option>200</option><option selected>500</option><option>2000</option><option>5000</option></select></label>
+        <label>Highlight <input id="lv-hl" maxlength="200" placeholder="e.g. SYNACC0001 failed"></label>
+        <label class="check"><input type="checkbox" id="lv-only"> Only matching lines</label>
+        <label class="check"><input type="checkbox" id="lv-follow" checked> Follow end</label>
+        <button id="lv-pause" type="button" class="ghost">Pause</button>
+        <button id="lv-clear" type="button" class="ghost">Clear</button>
+      </div>
+      <p id="lv-status" class="small muted" role="status"></p>
+      <div id="lv-out" class="live-out" tabindex="0"></div>
+    </section>
+
+    <section id="tab-sources" class="panel hidden">
+      <div class="row between"><h1>Sources</h1><div><button id="scan-all" class="primary">Scan all enabled sources</button> <button id="scan-cancel" class="ghost">Cancel scan</button></div></div>
+      <p class="muted">Sources are only read, never changed. Each scan reads only what was added since the last scan.</p>
+      <div class="table-wrap"><table id="src-table"><thead><tr><th>Label</th><th>Type</th><th>Path</th><th>Time zone</th><th>Enabled</th><th>Last scan</th><th></th></tr></thead><tbody></tbody></table></div>
+      <section id="chooser" class="chooser hidden" aria-labelledby="ch-title">
+        <div class="row between"><h2 id="ch-title">Files analysed</h2><button id="ch-close" type="button" class="ghost">Close</button></div>
+        <p id="ch-help" class="muted small"></p>
+        <div class="row">
+          <button id="ch-latest" type="button" class="ghost">Select latest 5 days</button>
+          <button id="ch-none" type="button" class="ghost">Clear</button>
+          <span id="ch-summary" class="small"></span>
+        </div>
+        <div class="table-wrap ch-wrap"><table id="ch-table"><thead><tr><th><span class="sr-only">Chosen</span></th><th>File</th><th>Modified</th><th>Size</th><th>Status</th></tr></thead><tbody></tbody></table></div>
+        <div class="row"><button id="ch-save" type="button" class="primary">Save choice and scan</button><span id="ch-result" class="small"></span></div>
+      </section>
+      <h2 id="src-form-title">Add a folder source</h2>
+      <form id="src-form" class="form" autocomplete="off">
+        <input type="hidden" id="s-id">
+        <label>Label <input id="s-label" required maxlength="100" placeholder="e.g. Gateway site A"></label>
+        <label>Folder path <input id="s-path" required maxlength="1024" placeholder=""></label>
+        <p id="s-path-help" class="muted small"></p>
+        <label>Time zone of the logs <input id="s-tz" list="tz-list" maxlength="64" placeholder="e.g. Europe/Lisbon (needed for B3DWEB Gateway logs)"></label>
+        <p id="s-tz-help" class="muted small"></p>
+        <datalist id="tz-list"></datalist>
+        <label>Log format <select id="s-format"><option value="auto">Detect automatically</option></select></label>
+        <label>File name patterns <input id="s-patterns" value="*" maxlength="400" placeholder="* or *.log;*.txt"></label>
+        <label class="check"><input id="s-recursive" type="checkbox" checked> Include subfolders</label>
+        <label class="check"><input id="s-enabled" type="checkbox" checked> Enabled</label>
+        <div class="row">
+          <button type="button" id="s-validate" class="ghost">Check path</button>
+          <button type="submit" class="primary" id="s-save">Add source and scan</button>
+          <button type="button" id="s-cancel" class="ghost hidden">Cancel editing</button>
+        </div>
+        <div id="s-result"></div>
+      </form>
+    </section>
+
+    <section id="tab-import" class="panel hidden">
+      <h1>Import a log bundle</h1>
+      <p>Use this for logs from computers that this analyser cannot reach. On that computer, put the log folder into a .zip file (see README, "Collecting a bundle"), bring it here and upload it. The original files on that computer are not changed.</p>
+      <form id="imp-form" class="form" autocomplete="off">
+        <label>Label <input id="i-label" required maxlength="100" placeholder="e.g. Router site B, 2026-11-03"></label>
+        <label>Time zone of the logs <input id="i-tz" list="tz-list" maxlength="64" placeholder="e.g. Europe/Lisbon"></label>
+        <p id="i-tz-help" class="muted small"></p>
+        <label>File (.zip, .gz, .log or .txt) <input id="i-file" type="file" required accept=".zip,.gz,.log,.txt"></label>
+        <p id="i-limit" class="muted small"></p>
+        <div class="row"><button type="submit" class="primary">Upload and index</button></div>
+        <progress id="i-progress" max="100" value="0" class="hidden"></progress>
+        <div id="i-result"></div>
+      </form>
+      <h2>Imported bundles</h2>
+      <div class="table-wrap"><table id="bundle-table"><thead><tr><th>Label</th><th>Imported</th><th>Size</th><th>SHA-256</th><th></th></tr></thead><tbody></tbody></table></div>
+    </section>
+
+    <section id="tab-maintenance" class="panel hidden">
+      <h1>Maintenance</h1>
+      <div id="m-info" class="cards"></div>
+      <section class="fresh" aria-labelledby="fs-title">
+        <h2 id="fs-title">Fresh session</h2>
+        <p class="small">Clears everything the analyser has collected (indexed events, temporary files and its memory) and analyses the newest files again. Original log files are never touched.</p>
+        <label class="check"><input type="checkbox" id="fs-keep" checked> Keep folder sources (paths and time zones); their file choice resets to the newest 5 days</label>
+        <label class="check"><input type="checkbox" id="fs-bundles" checked> Delete imported bundles (their copied files are removed from disk)</label>
+        <label class="check"><input type="checkbox" id="fs-audit"> Also clear the activity record (contains no patient data)</label>
+        <label class="check"><input type="checkbox" id="fs-scan" checked> Scan again straight away</label>
+        <div class="row"><button id="fs-start" type="button" class="danger">Start fresh session…</button></div>
+      </section>
+      <div class="row">
+        <button id="m-clean" class="ghost">Delete temporary files only</button>
+      </div>
+      <div id="m-result"></div>
+      <h2>About this installation</h2>
+      <ul id="m-about" class="plain"></ul>
+      <h2>Activity record</h2>
+      <p class="muted small">Who changed sources, scanned, imported, exported or deleted. Search text and log content are never recorded.</p>
+      <div class="table-wrap"><table id="m-audit"><thead><tr><th>Time (UTC)</th><th>User</th><th>Action</th><th>Details</th></tr></thead><tbody></tbody></table></div>
+    </section>
+  </main>
+
+  <dialog id="detail" aria-labelledby="d-title">
+    <div class="row between"><h2 id="d-title">Event</h2><button id="d-close" class="ghost" aria-label="Close">Close</button></div>
+    <dl id="d-meta" class="meta"></dl>
+    <h3>Message</h3>
+    <pre id="d-message" class="log"></pre>
+    <div id="d-detail-wrap"><h3>Continuation lines (stack trace)</h3><pre id="d-detail" class="log"></pre></div>
+    <h3>Original text from the source file</h3>
+    <p id="d-evidence-status" class="small"></p>
+    <pre id="d-original" class="log"></pre>
+    <div class="row"><button id="d-prev" class="ghost">Previous in file</button><button id="d-next" class="ghost">Next in file</button></div>
+  </dialog>
+</body>
+</html>

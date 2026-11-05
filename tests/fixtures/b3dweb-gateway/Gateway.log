@@ -1,0 +1,13 @@
+INF 2026.11.03 09:40:29 SPS - Study received from AE TESTMOD01 (192.0.2.10): PatientName=SYNTHETIC^ALPHA PatientID=TEST000123 Accession=SYNACC0001 StudyInstanceUID=2.25.118400711284592383014621098813374581
+INF 2026.11.03 09:40:31 DMS - Stored 42 instances for StudyInstanceUID=2.25.118400711284592383014621098813374581
+INF 2026.11.03 09:40:35 QRY - C-FIND from AE TESTWS02 (192.0.2.21): Accession=SYNACC0002, 0 matches
+ERROR 2026.11.03 09:41:02 SCU - C-STORE to TESTPACS (pacs01.example:104) failed for Accession=SYNACC0001 SOPInstanceUID=2.25.299410238811740092734811920051234567
+System.Net.Sockets.SocketException (10060): A connection attempt failed because the connected party did not properly respond after a period of time
+   at System.Net.Sockets.Socket.Connect(EndPoint remoteEP)
+   at B3D.Gateway.Dicom.StoreScu.Send(DicomDataset dataset) in C:\build\Gateway\StoreScu.cs:line 88
+WARNING 2026.11.03 05:00:17 SML - Mail server smtp.example not reachable, retrying in 60 s
+INF 2026.11.03 09:45:00 SCH - Scheduled retry of Accession=SYNACC0001 to TESTPACS
+INF 2026.11.03 09:45:09 SCU - C-STORE to TESTPACS succeeded for Accession=SYNACC0001 (42 instances)
+INF 2026.11.03 09:46:10 DUP - Duplicate SOPInstanceUID=2.25.299410238811740092734811920051234567 ignored
+INF 2026.11.03 09:47:12 UIH - UI request from 198.51.100.7 user testuser
+INF 2026.11.03 09:48:00 FSP - Free disk space 81 percent

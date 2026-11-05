@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, 'claude/**' ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+  CI: 'true'
+
+# Actions are pinned to commit SHAs (resolved 2026-11-04 from the release tags shown in the comments).
+jobs:
+  linux:
+    name: Linux checks, tests, container image
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '22'
+
+      - name: Secret / PHI scan, locked restore, format, build, tests, vulnerability audit, UI type check
+        run: ./scripts/check.sh
+
+      - name: Container image build
+        run: docker build -f deploy/docker/Dockerfile -t dicom-log-analyser:ci .
+
+      - name: Container refuses to start without identity configuration
+        run: |
+          set +e
+          docker run --rm dicom-log-analyser:ci > refuse.txt 2>&1
+          code=$?
+          cat refuse.txt
+          test "$code" -ne 0 && grep -q 'DLA_TRUSTED_PROXIES' refuse.txt
+
+      - name: Hardened container becomes healthy and enforces identity
+        run: |
+          set -euo pipefail
+          docker network create --subnet 172.31.0.0/24 dla-ci
+          mkdir -p ci-logs && cp tests/fixtures/dicom-router/*.log ci-logs/
+          docker run -d --name dla --network dla-ci -p 127.0.0.1:18080:8080 --read-only --tmpfs /tmp --cap-drop ALL \
+            --security-opt no-new-privileges:true -v "$PWD/ci-logs:/sources/ci:ro" \
+            -e DLA_PUBLIC_ORIGIN=https://dicomlogs.example.internal -e DLA_TRUSTED_PROXIES=172.31.0.1/32 \
+            -e DLA_ALLOWED_EMAIL_DOMAINS=example.org -e DLA_ADMIN_USERS=admin@example.org dicom-log-analyser:ci
+          for i in $(seq 1 30); do [ "$(docker inspect -f '{{.State.Health.Status}}' dla)" = healthy ] && break; sleep 2; done
+          test "$(docker inspect -f '{{.State.Health.Status}}' dla)" = healthy
+          H='Host: dicomlogs.example.internal'
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H "$H" http://127.0.0.1:18080/api/session)" = 401
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H "$H" -H 'X-Forwarded-Email: x@evil.example' http://127.0.0.1:18080/api/session)" = 403
+          test "$(curl -s -o /dev/null -w '%{http_code}' -H "$H" -H 'X-Forwarded-Email: a@example.org' http://127.0.0.1:18080/api/session)" = 200
+          docker logs dla
+          docker rm -f dla
+
+      - name: Compose file is valid
+        working-directory: deploy/docker
+        run: |
+          mkdir -p secrets && for f in oidc_client_secret cookie_secret tls.crt tls.key allowed-emails.txt; do : > "secrets/$f"; done
+          cp .env.example .env
+          docker compose config --quiet
+
+  portable:
+    name: Portable package ${{ matrix.rid }}
+    needs: linux
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, rid: win-x64, exe: DicomLogAnalyser.exe }
+          - { os: macos-latest, rid: osx-arm64, exe: DicomLogAnalyser }
+          - { os: ubuntu-latest, rid: linux-x64, exe: DicomLogAnalyser }
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+      - run: dotnet restore DicomLogAnalyser.slnx --locked-mode
+      - run: dotnet test DicomLogAnalyser.slnx -c Release --no-restore
+      - name: Publish self-contained single file
+        run: dotnet publish src/DicomLogAnalyser.Web -c Release -r ${{ matrix.rid }} -o publish
+      - name: Start, check loopback-only listener and authentication, stop
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $exe = Join-Path (Resolve-Path publish) '${{ matrix.exe }}'
+          $data = Join-Path $env:RUNNER_TEMP 'dla-data'
+          $p = Start-Process -FilePath $exe -ArgumentList '--no-browser','--port','48555','--data-dir',$data -PassThru -RedirectStandardOutput app.out -RedirectStandardError app.err
+          $ok = $false
+          for ($i = 0; $i -lt 60 -and -not $ok; $i++) { Start-Sleep 1; $ok = [bool]((Get-Content app.out -ErrorAction SilentlyContinue) -match 'launch\?t=') }
+          if (-not $ok) { Get-Content app.out, app.err; throw 'application did not start' }
+          $r = Invoke-WebRequest -Uri http://127.0.0.1:48555/api/overview -SkipHttpErrorCheck
+          if ($r.StatusCode -ne 401) { throw "expected 401, got $($r.StatusCode)" }
+          if ($IsWindows) {
+            $l = Get-NetTCPConnection -State Listen -LocalPort 48555
+            if ($l | Where-Object { $_.LocalAddress -ne '127.0.0.1' }) { throw 'non-loopback listener' }
+          }
+          Stop-Process -Id $p.Id
+      - name: Upload package (not a release)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: DicomLogAnalyser-${{ matrix.rid }}
+          path: publish/
+          retention-days: 7

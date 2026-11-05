@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+artifacts/
+TestResults/
+tests/
+deploy/docker/secrets/
+deploy/docker/.env
+.git/
+**/*.db
+**/*.log
+**/*.zip
+node_modules/

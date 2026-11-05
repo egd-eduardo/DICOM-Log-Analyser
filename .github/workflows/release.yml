@@ -1,0 +1,108 @@
+name: Release
+
+# Publishes ready-to-run packages after CI has passed on a commit pushed to main (a merged pull request).
+# Can also be started by hand for the current main.
+on:
+  workflow_run:
+    workflows: [ CI ]
+    types: [ completed ]
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-main
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: 'true'
+  DOTNET_CLI_TELEMETRY_OPTOUT: 'true'
+  DOTNET_SKIP_FIRST_TIME_EXPERIENCE: 'true'
+  CI: 'true'
+
+jobs:
+  release:
+    name: Build packages and publish the release
+    # Only for a successful CI run of a push to main (never for pull requests or failed runs).
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: write        # create the release and its tag
+      id-token: write        # sign the build provenance attestation
+      attestations: write
+    steps:
+      - name: Choose the tested commit
+        id: commit
+        env:
+          RUN_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: echo "sha=${RUN_SHA:-$GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.commit.outputs.sha }}
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+
+      - name: Restore (locked)
+        run: dotnet restore DicomLogAnalyser.slnx --locked-mode
+
+      - name: Version and tag
+        id: version
+        run: |
+          version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props | head -1)
+          test -n "$version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=v$version-build.$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Build self-contained packages
+        run: ./scripts/release.sh
+
+      - name: Smoke test the Linux package (starts, loopback only, refuses unauthenticated requests)
+        run: |
+          set -euo pipefail
+          mkdir -p smoke && cd smoke && unzip -q ../artifacts/release/DicomLogAnalyser-linux-x64.zip
+          ./DicomLogAnalyser-linux-x64/DicomLogAnalyser --no-browser --port 48555 --data-dir "$RUNNER_TEMP/smoke-data" > app.out 2>&1 &
+          pid=$!
+          for i in $(seq 1 60); do grep -q 'launch?t=' app.out && break; sleep 1; done
+          grep -q 'launch?t=' app.out
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:48555/api/overview)" = 401
+          ss -ltn | grep ':48555 ' | grep -v '127.0.0.1:48555' && { echo 'non-loopback listener'; exit 1; } || true
+          kill "$pid"
+
+      - name: Build provenance attestation
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: artifacts/release/*.zip
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          SHA: ${{ steps.commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          build="${TAG##*build.}"
+          {
+            echo "Packages built from commit \`$SHA\` after CI passed on Windows, macOS and Linux."
+            echo
+            cat docs/RELEASE_INSTALL.md
+            echo
+            echo "## Checksums (SHA-256)"
+            echo
+            echo '```text'
+            cat artifacts/release/SHA256SUMS.txt
+            echo '```'
+          } > release-notes.md
+          gh release create "$TAG" artifacts/release/*.zip artifacts/release/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" --target "$SHA" \
+            --title "DICOM Log Analyser $VERSION (build $build)" \
+            --notes-file release-notes.md --latest

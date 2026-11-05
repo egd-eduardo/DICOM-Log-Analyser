@@ -1,0 +1,37 @@
+# Build outputs
+bin/
+obj/
+publish/
+artifacts/
+TestResults/
+*.trx
+
+# IDE state
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+
+# Never commit indexes, real logs, bundles, keys or certificates.
+# Synthetic fixtures live in tests/fixtures and are explicitly re-included below.
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.log
+*.zip
+*.gz
+*.7z
+*.pem
+*.key
+*.pfx
+*.p12
+*.crt
+.env
+data/
+node_modules/
+tests/browser/screenshots/
+!tests/fixtures/**/*.log
+deploy/docker/secrets/
+deploy/docker/.env

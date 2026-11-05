@@ -1,0 +1,125 @@
+# DICOM Log Analyser, central mode.
+#
+#   browser --HTTPS--> access-proxy (oauth2-proxy: TLS + your organisation's SSO) --HTTP, internal network--> analyser
+#
+# * The analyser has NO published port and sits on an internal-only network: it cannot reach the internet and
+#   nothing can reach it except the access proxy, whose fixed address is the only one it trusts.
+# * There is no application password and no anonymous mode. Users sign in with your identity provider (Microsoft
+#   Entra ID, Google Workspace, Okta, Keycloak, ...), where passkeys / Windows Hello / existing SSO apply.
+# * Remote access is DISABLED by default: the proxy is published on 127.0.0.1 only. To serve the site network, set
+#   PUBLISH_ADDRESS in .env to this server's internal address. For access from outside the site, put the server on a
+#   private, identity-controlled network (VPN, Tailscale/WireGuard, or a zero-trust gateway). Never port-forward it.
+#
+# Copy .env.example to .env, put the TLS certificate and secrets in ./secrets (see README), then:
+#   docker compose up -d --build
+name: dicom-log-analyser
+
+services:
+  analyser:
+    build:
+      context: ../..
+      dockerfile: deploy/docker/Dockerfile
+    image: dicom-log-analyser:0.1.0
+    restart: unless-stopped
+    environment:
+      DLA_PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:?set PUBLIC_ORIGIN in .env}
+      DLA_TRUSTED_PROXIES: 172.30.0.10/32
+      DLA_IDENTITY_HEADER: X-Forwarded-Email
+      DLA_ALLOWED_USERS: ${ALLOWED_USERS:-}
+      DLA_ALLOWED_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}
+      DLA_ADMIN_USERS: ${ADMIN_USERS:?set ADMIN_USERS in .env}
+      DLA_SOURCE_ROOTS: /sources
+      DLA_MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-1024}
+      DLA_SCAN_INTERVAL_MINUTES: ${SCAN_INTERVAL_MINUTES:-0}
+    volumes:
+      - analyser-data:/data
+      # Log folders: one read-only bind mount per source, always ":ro". The host path must already be mounted on the
+      # Docker host (for a Windows share: mount it with CIFS/Kerberos on the host, see README). Examples:
+      # - /mnt/logs/gateway-site-a:/sources/gateway-site-a:ro
+      # - /mnt/logs/router-site-a:/sources/router-site-a:ro
+      - ${SOURCES_HOST_DIR:-./sources-empty}:/sources/default:ro
+    networks:
+      internal:
+        ipv4_address: 172.30.0.20
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    user: "1654:1654"
+    pids_limit: 256
+    mem_limit: 4g
+    logging:
+      driver: local
+      options: { max-size: "10m", max-file: "5" }
+
+  access-proxy:
+    # Version verified 2026-11-04 (v7.15.5 fixes GHSA-63jm-59jj-478j and GHSA-wr5q-7wxw-x568). Pin the digest after the
+    # first pull: docker compose pull && docker inspect --format '{{index .RepoDigests 0}}' quay.io/oauth2-proxy/oauth2-proxy:v7.15.5
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.5
+    restart: unless-stopped
+    depends_on:
+      analyser: { condition: service_healthy }
+    ports:
+      - "${PUBLISH_ADDRESS:-127.0.0.1}:443:8443"
+    environment:
+      OAUTH2_PROXY_PROVIDER: ${OIDC_PROVIDER:-oidc}
+      OAUTH2_PROXY_OIDC_ISSUER_URL: ${OIDC_ISSUER_URL:?set OIDC_ISSUER_URL in .env}
+      OAUTH2_PROXY_CLIENT_ID: ${OIDC_CLIENT_ID:?set OIDC_CLIENT_ID in .env}
+      OAUTH2_PROXY_CLIENT_SECRET_FILE: /run/secrets/oidc_client_secret
+      OAUTH2_PROXY_COOKIE_SECRET_FILE: /run/secrets/cookie_secret
+      OAUTH2_PROXY_CODE_CHALLENGE_METHOD: S256
+      OAUTH2_PROXY_REDIRECT_URL: ${PUBLIC_ORIGIN}/oauth2/callback
+      OAUTH2_PROXY_EMAIL_DOMAINS: ${ALLOWED_EMAIL_DOMAINS:-}
+      OAUTH2_PROXY_AUTHENTICATED_EMAILS_FILE: /etc/oauth2-proxy/allowed-emails.txt
+      OAUTH2_PROXY_UPSTREAMS: http://172.30.0.20:8080/
+      OAUTH2_PROXY_PASS_USER_HEADERS: "true"
+      OAUTH2_PROXY_PASS_ACCESS_TOKEN: "false"
+      OAUTH2_PROXY_PASS_AUTHORIZATION_HEADER: "false"
+      OAUTH2_PROXY_SKIP_AUTH_STRIP_HEADERS: "true"
+      OAUTH2_PROXY_PASS_HOST_HEADER: "true"
+      OAUTH2_PROXY_UPSTREAM_TIMEOUT: 30m
+      OAUTH2_PROXY_HTTPS_ADDRESS: ":8443"
+      OAUTH2_PROXY_TLS_CERT_FILE: /run/secrets/tls.crt
+      OAUTH2_PROXY_TLS_KEY_FILE: /run/secrets/tls.key
+      OAUTH2_PROXY_TLS_MIN_VERSION: TLS1.2
+      OAUTH2_PROXY_COOKIE_NAME: __Host-dla_auth
+      OAUTH2_PROXY_COOKIE_SECURE: "true"
+      OAUTH2_PROXY_COOKIE_SAMESITE: lax
+      OAUTH2_PROXY_COOKIE_EXPIRE: 12h
+      OAUTH2_PROXY_COOKIE_REFRESH: 30m
+      OAUTH2_PROXY_COOKIE_CSRF_PER_REQUEST: "true"
+      OAUTH2_PROXY_SKIP_PROVIDER_BUTTON: "true"
+      # Request logs would contain URLs, and search text travels in URLs: keep them off. Auth logs (who signed in) stay on.
+      OAUTH2_PROXY_REQUEST_LOGGING: "false"
+      OAUTH2_PROXY_SILENCE_PING_LOGGING: "true"
+      # No --trusted-ip, no --skip-auth-route, no --reverse-proxy: nothing bypasses sign-in.
+    secrets: [oidc_client_secret, cookie_secret, tls.crt, tls.key]
+    volumes:
+      - ./secrets/allowed-emails.txt:/etc/oauth2-proxy/allowed-emails.txt:ro
+    networks:
+      internal:
+        ipv4_address: 172.30.0.10
+      edge: {}
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 128
+    mem_limit: 256m
+
+secrets:
+  oidc_client_secret: { file: ./secrets/oidc_client_secret }
+  cookie_secret: { file: ./secrets/cookie_secret }
+  tls.crt: { file: ./secrets/tls.crt }
+  tls.key: { file: ./secrets/tls.key }
+
+volumes:
+  analyser-data: {}
+
+networks:
+  internal:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+  edge: {}
