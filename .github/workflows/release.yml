@@ -77,7 +77,11 @@ jobs:
           ss -ltn | grep ':48555 ' | grep -v '127.0.0.1:48555' && { echo 'non-loopback listener'; exit 1; } || true
           kill "$pid"
 
+      # GitHub only stores artifact attestations for public repositories (or organisation plans that include them);
+      # for a private personal repository the step is skipped and the release relies on the SHA-256 checksums.
       - name: Build provenance attestation
+        id: attest
+        if: ${{ !github.event.repository.private }}
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: artifacts/release/*.zip
@@ -88,6 +92,7 @@ jobs:
           TAG: ${{ steps.version.outputs.tag }}
           VERSION: ${{ steps.version.outputs.version }}
           SHA: ${{ steps.commit.outputs.sha }}
+          ATTESTED: ${{ steps.attest.outcome == 'success' }}
         run: |
           set -euo pipefail
           build="${TAG##*build.}"
@@ -96,6 +101,10 @@ jobs:
             echo
             cat docs/RELEASE_INSTALL.md
             echo
+            if [ "$ATTESTED" = "true" ]; then
+              echo "Build provenance can be verified with \`gh attestation verify <file> --repo $GITHUB_REPOSITORY\`."
+              echo
+            fi
             echo "## Checksums (SHA-256)"
             echo
             echo '```text'

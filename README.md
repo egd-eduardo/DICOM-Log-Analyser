@@ -52,8 +52,9 @@ Both modes are the same program with the same parser, index and interface.
 
 Get the newest package from the **[Releases page](https://github.com/egd-eduardo/DICOM-Log-Analyser/releases/latest)**.
 A release is published automatically after every merge to `main`, once CI has passed on Windows, macOS and Linux. Each
-release has zips for Windows (x64, ARM64), Mac (Apple silicon, Intel) and Linux, a `SHA256SUMS.txt` and a build
-provenance attestation (`gh attestation verify <file> --repo egd-eduardo/DICOM-Log-Analyser`).
+release has zips for Windows (x64, ARM64), Mac (Apple silicon, Intel) and Linux and a `SHA256SUMS.txt`. A build
+provenance attestation is added when the repository is public (GitHub does not store attestations for private personal
+repositories); it is then verified with `gh attestation verify <file> --repo egd-eduardo/DICOM-Log-Analyser`.
 
 ### Install and start (Windows)
 
