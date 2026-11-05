@@ -123,6 +123,16 @@ too; a new deterministic test holds the queue with a gate and proves that a chan
 not queued twice and is indexed by that scan. The race could not be reproduced locally (old and new tests each passed
 40 times under CPU load), so CI on the fixed tests is the confirmation.
 
+## Release workflow
+
+`.github/workflows/release.yml` runs after CI succeeds for a push to `main` (or by hand on `main`): it builds the five
+packages with `scripts/release.sh`, smoke-tests the Linux package, attests build provenance and publishes the release.
+Checked locally on 2026-11-05: actionlint passed on both workflows; `scripts/release.sh` built all five zips and
+`SHA256SUMS.txt` without changing the lock files; the Mac and Linux zips keep the executable permission of the program
+and `start.command`; the Windows zip contains the program, the start script and the README; the workflow's smoke test
+(start, 401 without session, loopback-only listener) and release-notes step passed when run by hand. The workflow
+itself runs only on GitHub after the first merge to `main`.
+
 ## Not run here (needs the target environments)
 
 * Interactive use of the Windows and macOS packages by a person, and Windows SmartScreen / macOS Gatekeeper behaviour

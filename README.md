@@ -48,27 +48,33 @@ Both modes are the same program with the same parser, index and interface.
 
 ## Portable local mode
 
+### Download
+
+Get the newest package from the **[Releases page](https://github.com/egd-eduardo/DICOM-Log-Analyser/releases/latest)**.
+A release is published automatically after every merge to `main`, once CI has passed on Windows, macOS and Linux. Each
+release has zips for Windows (x64, ARM64), Mac (Apple silicon, Intel) and Linux, a `SHA256SUMS.txt` and a build
+provenance attestation (`gh attestation verify <file> --repo egd-eduardo/DICOM-Log-Analyser`).
+
 ### Install and start (Windows)
 
-1. Obtain `DicomLogAnalyser-win-x64.zip` (or `win-arm64`) built by CI or by `scripts/package.ps1`, and check its
-   SHA-256 against the `.sha256` file.
-2. Extract it to a folder you own, for example `%LOCALAPPDATA%\Programs\DicomLogAnalyser`.
-3. Double-click **Start DICOM Log Analyser.cmd** (or `DicomLogAnalyser.exe`). A console window shows the status and
+1. Download `DicomLogAnalyser-win-x64.zip` (or `win-arm64`) and extract it to a folder you own, for example
+   `%LOCALAPPDATA%\Programs\DicomLogAnalyser`.
+2. Double-click **Start DICOM Log Analyser.cmd** (or `DicomLogAnalyser.exe`). A console window shows the status and
    your default browser opens, already signed in. No administrator rights and no .NET installation are needed.
-4. Keep the console window open. Press **O** in it to open the interface again; close it (or Ctrl+C) to stop.
+3. Keep the console window open. Press **O** in it to open the interface again; close it (or Ctrl+C) to stop.
 
-Windows SmartScreen may warn about an unsigned executable. Use a build signed with your organisation's
-code-signing certificate for production use.
+The packages are not code-signed yet: Windows SmartScreen may show "Windows protected your PC"; choose **More info**,
+then **Run anyway** (first time only). Use a build signed with your organisation's certificate for wider distribution.
 
 ### Install and start (macOS)
 
-1. Obtain `DicomLogAnalyser-osx-arm64.zip` (Apple silicon) or `osx-x64` (Intel) and verify its SHA-256.
-2. Extract it, for example into `~/Applications/DicomLogAnalyser`.
-3. The build is not notarised. Remove the download quarantine once, after verifying the checksum:
+1. Download `DicomLogAnalyser-osx-arm64.zip` (Apple silicon) or `osx-x64` (Intel) and extract it, for example into
+   `~/Applications`.
+2. The build is not notarised. Remove the download quarantine once:
    ```bash
-   xattr -dr com.apple.quarantine ~/Applications/DicomLogAnalyser
+   xattr -dr com.apple.quarantine ~/Applications/DicomLogAnalyser-osx-arm64
    ```
-4. Double-click `start.command` (or run `./DicomLogAnalyser` in Terminal). The browser opens, already signed in.
+3. Double-click `start.command` (or run `./DicomLogAnalyser` in Terminal). The browser opens, already signed in.
 
 ### Options
 
@@ -356,6 +362,10 @@ index; that is not implemented in this version.
 
 ```bash
 ./scripts/package.sh win-x64        # also: win-arm64, osx-arm64, osx-x64, linux-x64, linux-arm64
+```
+
+```bash
+./scripts/release.sh                # all release packages and SHA256SUMS.txt into artifacts/release/
 ```
 
 Requires the .NET 10 SDK (see `global.json`), Node.js 22 (UI type check only) and Python 3 (secret scan).
