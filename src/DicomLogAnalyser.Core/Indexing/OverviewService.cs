@@ -23,6 +23,29 @@ public sealed partial class OverviewService(IndexDatabase db)
 {
     private readonly Lock _lock = new();
     private (long Version, Overview Value)? _cache;
+    private (long Version, IReadOnlyList<CategoryCount> Value)? _categories;
+
+    /// <summary>Every category/component present in the index (for the search filter), most frequent first.</summary>
+    public IReadOnlyList<CategoryCount> Categories()
+    {
+        var version = db.DataVersion;
+        lock (_lock)
+        {
+            if (_categories is { } cached && cached.Version == version) return cached.Value;
+        }
+
+        var list = new List<CategoryCount>();
+        using (var c = db.Open())
+        using (var cmd = c.CreateCommand())
+        {
+            cmd.CommandText = "SELECT category, count(*), sum(level>=5), sum(level=4) FROM events GROUP BY category ORDER BY count(*) DESC LIMIT 500";
+            using var r = cmd.ExecuteReader();
+            while (r.Read()) list.Add(new CategoryCount(r.GetString(0), r.GetInt64(1), r.GetInt64(2), r.GetInt64(3)));
+        }
+
+        lock (_lock) _categories = (version, list);
+        return list;
+    }
 
     /// <summary>Returns the overview, recomputed only when the indexed data has changed.</summary>
     public Overview Build()

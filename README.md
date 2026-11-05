@@ -21,8 +21,10 @@
   and unreadable files, and reports each case.
 * Every event links back to its source file, line range and byte range; the detail view re-reads the original bytes
   and says whether the file is unchanged.
-* Search by accession number, patient ID, Study/SOP Instance UID, AE title, IP address or any text, with level,
-  source, category and time filters. Matches are **highlighted in a colour you choose** (five presets or any custom
+* Search by accession number, patient ID, Study/SOP Instance UID, AE title, IP address or any text: every term is
+  found as a **substring anywhere** in the events (messages and stack traces), ignoring case and accents, so a fragment
+  such as `840.1136` or `ACC000` is enough. Filters: level, source, **category** (a list of the categories present),
+  time range. Matches are **highlighted in a colour you choose** (five presets or any custom
   colour); the choice and the dark/light background are remembered by the browser.
 * The result summary keeps three situations apart: *no matching event found in the indexed logs* (which says nothing
   about success or failure), *errors were logged*, and *events found with no warning or error* (suggests, but does
@@ -100,7 +102,12 @@ every change. Details: [docs/SECURITY.md](docs/SECURITY.md).
 
 ## Adding sources
 
-Open **Sources**, enter a label and the folder path, choose **Check path**, then **Add source and scan**. The check
+A **source is one folder with log files**: add one for each folder you want to analyse (for example the Gateway folder
+and the DICOM Router folder of each site); all sources are searched together. Open **Sources**, choose **Browse…** (or
+type the path), check the label, then **Add folder and scan**; the form then invites you to add the next folder.
+In local mode **Browse…** opens the folder dialog of your own computer (Windows Explorer dialog, macOS Finder dialog,
+or zenity on Linux desktops; it may open behind the browser window); without a dialog, and in central mode, an in-app
+folder browser is shown (in central mode it lists only the read-only mounted folders). The check
 reports whether the folder exists, is readable, how many files it contains, whether subfolders were inaccessible,
 and whether it is a mapped drive or a read-only mount. Sources can be relabelled, enabled/disabled, rescanned and
 deleted; deleting a folder source removes only its index, never the original files.

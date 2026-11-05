@@ -2,7 +2,7 @@
 // DICOM Log Analyser UI. Plain JavaScript, no external libraries or network calls other than this application's API.
 // All log content is inserted with textContent (never as HTML).
 
-/** @type {{csrfToken: string, mode: string, role: string, identity: string, version: string, platform: string, sourceRoots: string[], maxUploadMb: number, scanIntervalMinutes: number, liveIntervalSeconds: number, formats: {id: string, name: string}[]} | null} */
+/** @type {{csrfToken: string, mode: string, role: string, identity: string, version: string, platform: string, sourceRoots: string[], maxUploadMb: number, scanIntervalMinutes: number, liveIntervalSeconds: number, folderDialog: boolean, formats: {id: string, name: string}[]} | null} */
 let session = null;
 /** @type {any[]} */
 let sourcesCache = [];
@@ -91,22 +91,21 @@ function setupPreferences() {
 
 // ---------- Highlighting ----------
 
-/** Builds a regular expression matching the letter/digit tokens of the positive search terms (as the index does). @param {string} q */
+/** Regular expression marking each searched text literally (case-insensitive), as the search matches substrings. @param {string} q */
 function buildHighlight(q) {
   /** @type {string[]} */
-  const tokens = [];
+  const terms = [];
   const re = /"([^"]*)"|(\S+)/g;
   let m;
   while ((m = re.exec(q)) !== null) {
     let term = m[1] ?? m[2];
     if (m[2] && term.startsWith('-') && term.length > 1) continue;
-    term = term.replace(/\*$/, '');
-    for (const t of term.split(/[^\p{L}\p{N}]+/u)) if (t.length > 0) tokens.push(t);
+    if (m[2]) term = term.replace(/\*+$/, '');
+    if (term.trim().length > 0) terms.push(term);
   }
-  if (tokens.length === 0) return null;
-  const unique = [...new Set(tokens.map((t) => t.toLowerCase()))].sort((a, b) => b.length - a.length).slice(0, 64);
-  const escaped = unique.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
-  return new RegExp('(?<![\\p{L}\\p{N}])(' + escaped.join('|') + ')', 'giu');
+  if (terms.length === 0) return null;
+  const unique = [...new Set(terms.map((t) => t.toLowerCase()))].sort((a, b) => b.length - a.length).slice(0, 64);
+  return new RegExp('(' + unique.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'giu');
 }
 
 /** Appends text to a node, wrapping matches in <mark>. @param {HTMLElement} node @param {string} text @param {RegExp | null} [regex] */
@@ -211,7 +210,7 @@ const when = (iso) => (iso ? iso.replace('T', ' ').slice(0, 19) + ' UTC' : 'neve
 
 const loaders = /** @type {Record<string, () => Promise<void>>} */ ({
   overview: loadOverview,
-  search: async () => { await loadSources(); $('q').focus(); },
+  search: async () => { await Promise.all([loadSources(), loadCategories()]); $('q').focus(); },
   live: openLive,
   sources: loadSources,
   import: loadSources,
@@ -319,7 +318,12 @@ function fillTable(id, rows, cells) {
 /** @param {string} text @param {{category?: string}} filters */
 function linkSearch(text, filters) {
   const a = el('a', '', text); a.href = '#';
-  a.addEventListener('click', (ev) => { ev.preventDefault(); $('q').value = ''; $('f-category').value = filters.category || ''; showTab('search'); runSearch(false); });
+  a.addEventListener('click', async (ev) => {
+    ev.preventDefault(); $('q').value = '';
+    await loadCategories();
+    setCategory(filters.category || '');
+    showTab('search'); runSearch(false);
+  });
   return a;
 }
 /** @param {string} text @param {number} id */
@@ -331,13 +335,30 @@ function linkEvent(text, id) {
 
 // ---------- Search ----------
 
+/** Fills the category filter with the categories present in the index (with counts). */
+async function loadCategories() {
+  const cats = await api('/api/categories');
+  const sel = $('f-category');
+  const keep = sel.value;
+  sel.replaceChildren(new Option('All categories', ''));
+  for (const c of cats) sel.append(new Option(`${c.category}  (${num(c.events)}${c.errors ? ', ' + num(c.errors) + ' errors' : ''})`, c.category));
+  setCategory(keep);
+}
+
+/** @param {string} value */
+function setCategory(value) {
+  const sel = $('f-category');
+  if (value && ![...sel.options].some((o) => o.value === value)) sel.append(new Option(value, value));
+  sel.value = value;
+}
+
 function searchParams() {
   const p = new URLSearchParams();
   const q = $('q').value.trim();
   if (q) p.set('q', q);
   if ($('f-level').value) p.set('minLevel', $('f-level').value);
   if ($('f-source').value) p.set('sources', $('f-source').value);
-  if ($('f-category').value.trim()) p.set('category', $('f-category').value.trim());
+  if ($('f-category').value) p.set('category', $('f-category').value);
   if ($('f-from').value) p.set('from', $('f-from').value + 'Z');
   if ($('f-to').value) p.set('to', $('f-to').value + 'Z');
   if ($('f-exc').checked) p.set('exceptions', '1');
@@ -466,7 +487,10 @@ async function loadSources() {
   sel.replaceChildren(new Option('All sources', ''));
   for (const s of sourcesCache) sel.append(new Option(s.label + (s.kind === 'bundle' ? ' (bundle)' : ''), String(s.id)));
   sel.value = keep;
-  fillTable('src-table', sourcesCache.filter((s) => s.kind === 'folder'), (s) => [
+  const folders = sourcesCache.filter((s) => s.kind === 'folder');
+  $('src-count').textContent = folders.length === 0 ? 'Your folders: none yet' : `Your folders (${folders.length})`;
+  if (!$('s-id').value) $('src-form-title').textContent = folders.length === 0 ? 'Add your first folder' : 'Add another folder';
+  fillTable('src-table', folders, (s) => [
     s.label, 'Folder', s.path, s.timeZone || el('span', 'warn-text', 'not set'),
     s.enabled ? 'Yes' : 'No', statusLine(s), sourceActions(s),
   ]);
@@ -521,7 +545,8 @@ function editSource(s) {
 
 function resetSourceForm() {
   $('src-form').reset(); $('s-id').value = ''; $('s-path').disabled = false;
-  $('src-form-title').textContent = 'Add a folder source'; $('s-save').textContent = 'Add source and scan'; $('s-cancel').classList.add('hidden');
+  $('src-form-title').textContent = sourcesCache.some((x) => x.kind === 'folder') ? 'Add another folder' : 'Add your first folder';
+  $('s-save').textContent = 'Add folder and scan'; $('s-cancel').classList.add('hidden');
   prefillTimeZone('s-tz', 's-tz-help');
 }
 
@@ -628,6 +653,64 @@ function applyLiveFilter() {
     const text = div.textContent || '';
     div.replaceChildren(); appendHighlighted(div, text, live.regex);
     div.classList.toggle('hide', Boolean(only) && !matches(text));
+  }
+}
+
+// ---------- Folder choice (native dialog or in-app browser) ----------
+
+let fbPath = '';
+
+async function browseFolder() {
+  if (session?.folderDialog) {
+    $('s-browse').disabled = true;
+    $('s-browse').textContent = 'Choose in the dialog…';
+    notify('A folder dialog has opened on this computer (it may be behind the browser window).', true);
+    try {
+      const r = await api('/api/folders/pick', { method: 'POST', body: '{}' });
+      if (r.path) await useFolder(r.path);
+      return;
+    } catch (e) {
+      notify(/** @type {Error} */ (e).message + ' Opening the folder browser instead.');
+    } finally {
+      $('s-browse').disabled = false; $('s-browse').textContent = 'Browse…';
+    }
+  }
+  await openFolderBrowser($('s-path').value.trim());
+}
+
+/** @param {string} path */
+async function useFolder(path) {
+  $('s-path').value = path;
+  if (!$('s-label').value.trim()) $('s-label').value = path.split(/[\\/]/).filter(Boolean).pop() || path;
+  const v = await api('/api/sources/validate', { method: 'POST', body: JSON.stringify({ path }) });
+  renderValidation(v);
+}
+
+/** @param {string} path */
+async function openFolderBrowser(path) {
+  const dlg = $('fb');
+  if (!dlg.open) dlg.showModal();
+  try {
+    await showFolder(path);
+  } catch {
+    await showFolder('');
+  }
+}
+
+/** @param {string} path */
+async function showFolder(path) {
+  const r = await api('/api/folders?path=' + encodeURIComponent(path || ''));
+  fbPath = r.path || '';
+  $('fb-path').textContent = r.path ? r.path : 'Choose where to start.';
+  $('fb-info').textContent = r.path ? `${r.folders.length} folder(s), ${r.files} file(s) here` + (r.truncated ? ' (list shortened)' : '') : '';
+  $('fb-up').disabled = !r.parent; $('fb-up').dataset.path = r.parent || '';
+  $('fb-use').disabled = !r.path;
+  const list = $('fb-list'); list.replaceChildren();
+  if (!r.folders.length) list.append(el('li', 'muted small', r.path ? 'No sub-folders. Use this folder if it contains the log files.' : 'Nothing to show.'));
+  for (const f of r.folders) {
+    const li = el('li'); const b = el('button', '', '📁 ' + f.name); b.type = 'button';
+    b.addEventListener('click', () => showFolder(f.path).catch((e) => notify(e.message)));
+    li.append(b); list.append(li);
   }
 }
 
@@ -830,6 +913,11 @@ async function start() {
   $('scan-cancel').addEventListener('click', () => api('/api/scan/cancel', { method: 'POST', body: '{}' }).catch((e) => notify(e.message)));
   $('s-validate').addEventListener('click', () => api('/api/sources/validate', { method: 'POST', body: JSON.stringify({ path: $('s-path').value }) }).then(renderValidation).catch((e) => notify(e.message)));
   $('s-cancel').addEventListener('click', resetSourceForm);
+  $('s-browse').addEventListener('click', () => { browseFolder().catch((e) => notify(e.message)); });
+  $('fb-cancel').addEventListener('click', () => $('fb').close());
+  $('fb-roots').addEventListener('click', () => showFolder('').catch((e) => notify(e.message)));
+  $('fb-up').addEventListener('click', () => showFolder($('fb-up').dataset.path).catch((e) => notify(e.message)));
+  $('fb-use').addEventListener('click', () => { $('fb').close(); useFolder(fbPath).catch((e) => notify(e.message)); });
   $('lv-source').addEventListener('change', () => loadLiveFiles().catch((e) => notify(e.message)));
   $('lv-file').addEventListener('change', startLive);
   $('lv-lines').addEventListener('change', startLive);
@@ -867,7 +955,7 @@ async function start() {
         const label = $('s-label').value;
         const r = await api('/api/sources', { method: 'POST', body: JSON.stringify(sourceBody()) });
         renderValidation(r.validation);
-        notify('Source added with the files of its latest 5 days. Check the choice below; the first scan has started.', true);
+        notify('Folder added with the files of its latest 5 days; the first scan has started. Check the file choice below. To add another folder, fill in the form again.', true);
         resetSourceForm();
         await openChooser(r.id, label).catch(() => {});
       }

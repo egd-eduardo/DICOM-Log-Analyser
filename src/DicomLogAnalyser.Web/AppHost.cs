@@ -20,7 +20,7 @@ public static class AppHost
     /// Builds the web application with no external configuration sources: environment variables such as
     /// ASPNETCORE_URLS, appsettings files and command-line "urls" cannot change the binding.
     /// </summary>
-    public static WebApplication Build(AppOptions options, TimeProvider? time = null, Action<ILoggingBuilder>? logging = null)
+    public static WebApplication Build(AppOptions options, TimeProvider? time = null, Action<ILoggingBuilder>? logging = null, Platform.IFolderPicker? folderPicker = null)
     {
         ArgumentNullException.ThrowIfNull(options);
         var problems = options.Validate();
@@ -90,6 +90,9 @@ public static class AppHost
         builder.Services.AddSingleton(new LaunchTokenService(time));
         builder.Services.AddSingleton<ScanCoordinator>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<ScanCoordinator>());
+        // Native folder dialogs exist only where the analyser runs on the user's own desktop (local mode).
+        builder.Services.AddSingleton(folderPicker ?? (options.Mode == AppMode.Local ? Platform.FolderPickers.ForThisComputer() : new Platform.UnsupportedFolderPicker()));
+        builder.Services.AddSingleton(new Platform.FolderBrowser(options));
         builder.Services.AddSingleton<LiveIndexer>();
         builder.Services.AddHostedService(sp => sp.GetRequiredService<LiveIndexer>());
 

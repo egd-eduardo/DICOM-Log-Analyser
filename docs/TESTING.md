@@ -13,7 +13,7 @@ approved environment.
 | Locked restore | `dotnet restore --locked-mode` (lock files must match) |
 | Formatting and code style | `dotnet format --verify-no-changes` (`.editorconfig`) |
 | Build with analyzers | `dotnet build -c Release`, `AnalysisLevel=latest-recommended`, warnings as errors, NuGet Audit |
-| Unit and integration tests | xUnit, 140 tests (parsers, line reader, assembler, ingestion, rotation/truncation, search, query safety, bundle import attacks, path validation, configuration, HTTP security in both modes, end-to-end API, background queue failure isolation, viewer/administrator roles, 5-day file selection and schema upgrade, live view and live indexing, fresh session) |
+| Unit and integration tests | xUnit, 159 tests (parsers, line reader, assembler, ingestion, rotation/truncation, search, query safety, bundle import attacks, path validation, configuration, HTTP security in both modes, end-to-end API, background queue failure isolation, viewer/administrator roles, 5-day file selection and schema upgrade, live view and live indexing, fresh session, substring search, folder dialog and browser) |
 | Dependency vulnerabilities | `dotnet list package --vulnerable --include-transitive`; `npm audit` for the UI type-check tool |
 | UI type check | TypeScript 7.0.2 `checkJs` over `Ui/app.js` |
 
@@ -28,7 +28,7 @@ These checks were actually run; nothing below is assumed.
 |---|---|
 | Secret/PHI scan | Passed (83 files). A planted file with a real-looking UID, a non-synthetic name, a public IP, a private-key header and a password was correctly rejected (5 findings). |
 | Locked restore, format, build | Passed, no warnings |
-| Tests | 140 passed, 0 failed |
+| Tests | 159 passed, 0 failed |
 | Vulnerable packages (NuGet, transitive) | None reported |
 | npm audit (TypeScript) | 0 vulnerabilities |
 | UI type check | Passed, after fixing seven type errors it found |
@@ -43,6 +43,7 @@ These checks were actually run; nothing below is assumed.
 | File chooser (Chromium, folder with 8 daily files) | Latest 5 days pre-selected; ticking an older file showed "7 day(s) of 5 maximum" and disabled saving; a 4-day custom choice was saved and only its 4 files were searchable; a file added afterwards appeared as "new, not chosen" and in the overview gaps, while a deliberately unticked file stayed "not chosen" |
 | Live view (Chromium, a writer appending 3 to 4 lines per second with CRLF, accents and exception traces) | New lines appeared within about a second; errors red with traces; highlight marked the term; accented text correct; scrolling up stopped following; "only matching lines" filtered; after truncation the view restarted from the new end. A line written seconds earlier was found by Search without a manual scan (live indexing, 5 s) |
 | Fresh session | Tests: folders kept with time zone, choice reset to the newest 5 days and re-analysed; bundle files removed from disk; temporary files cleared; activity record kept (or cleared on request); an indexed identifier absent from the raw database and WAL bytes afterwards. Chromium: a 1-day choice became the newest 5 days after the fresh session, page results were cleared, source kept, `fresh_session` recorded |
+| Sources, folder browser, substring search (Chromium, no desktop dialog available, so the in-app browser was used) | Empty page showed "Your folders: none yet / Add your first folder"; Browse opened the folder browser, navigation into a sub-folder and "Use this folder" filled the path, suggested the label and validated it; after adding, "Add another folder" and "Your folders (2)"; the fragment `ACC000` found 5 events with the fragment highlighted; choosing category SCU in the list narrowed them to 2 |
 | Concurrency stress | Three rounds of scans (30 MB plus fixtures) while six threads searched, read the overview and sources, and new sources were added: 0 errors |
 
 ### Intermittent scan failure (investigated 2026-11-04)
@@ -140,6 +141,8 @@ runs only for public repositories; the release relies on the SHA-256 checksums o
 
 ## Not run here (needs the target environments)
 
+* The native folder dialogs (Windows `IFileOpenDialog`, macOS `choose folder`) need a desktop session; the endpoint
+  and the in-app browser were tested, the dialogs themselves only by code review.
 * Interactive use of the Windows and macOS packages by a person, and Windows SmartScreen / macOS Gatekeeper behaviour
   with unsigned binaries (CI starts the executables headless).
 * oauth2-proxy with a real identity provider (the image registry was not reachable from this environment).

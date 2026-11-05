@@ -8,7 +8,7 @@ namespace DicomLogAnalyser.Core.Indexing;
 /// </summary>
 public sealed class IndexDatabase
 {
-    public const int SchemaVersion = 2;
+    public const int SchemaVersion = 3;
     private readonly string _connectionString;
 
     public IndexDatabase(string databasePath)
@@ -57,6 +57,8 @@ public sealed class IndexDatabase
         if (version == 0) Exec(c, Schema, tx);
         // Version 2: per-folder file selection (5-day limit) and counts of files left out.
         if (version == 1) Exec(c, MigrationTo2, tx);
+        // Version 3: substring search (trigram full-text index); existing events are re-indexed in place.
+        if (version is 1 or 2) Exec(c, MigrationTo3, tx);
         Exec(c, $"PRAGMA user_version={SchemaVersion};", tx);
         tx.Commit();
     }
@@ -111,6 +113,24 @@ public sealed class IndexDatabase
         ALTER TABLE sources ADD COLUMN selection_seen TEXT NULL;
         ALTER TABLE sources ADD COLUMN unselected_files INTEGER NOT NULL DEFAULT 0;
         ALTER TABLE sources ADD COLUMN new_files INTEGER NOT NULL DEFAULT 0;
+        """;
+
+    private const string MigrationTo3 = """
+        DROP TRIGGER IF EXISTS events_ai;
+        DROP TRIGGER IF EXISTS events_ad;
+        DROP TABLE IF EXISTS events_fts;
+        CREATE VIRTUAL TABLE events_fts USING fts5 (
+            message, detail, category, component,
+            content='events', content_rowid='id',
+            tokenize='trigram remove_diacritics 1'
+        );
+        CREATE TRIGGER events_ai AFTER INSERT ON events BEGIN
+            INSERT INTO events_fts(rowid, message, detail, category, component) VALUES (new.id, new.message, new.detail, new.category, new.component);
+        END;
+        CREATE TRIGGER events_ad AFTER DELETE ON events BEGIN
+            INSERT INTO events_fts(events_fts, rowid, message, detail, category, component) VALUES ('delete', old.id, old.message, old.detail, old.category, old.component);
+        END;
+        INSERT INTO events_fts(events_fts) VALUES ('rebuild');
         """;
 
     private const string Schema = """
@@ -181,7 +201,7 @@ public sealed class IndexDatabase
         CREATE VIRTUAL TABLE IF NOT EXISTS events_fts USING fts5 (
             message, detail, category, component,
             content='events', content_rowid='id',
-            tokenize='unicode61 remove_diacritics 2'
+            tokenize='trigram remove_diacritics 1'
         );
         CREATE TRIGGER IF NOT EXISTS events_ai AFTER INSERT ON events BEGIN
             INSERT INTO events_fts(rowid, message, detail, category, component) VALUES (new.id, new.message, new.detail, new.category, new.component);

@@ -65,7 +65,7 @@
           <div class="filter-grid">
             <label>Minimum level <select id="f-level"><option value="">Any</option><option value="info">Info</option><option value="warning">Warning</option><option value="error">Error</option></select></label>
             <label>Source <select id="f-source"><option value="">All sources</option></select></label>
-            <label>Category <input id="f-category" maxlength="200" placeholder="e.g. SCU, RouterScp"></label>
+            <label>Category <select id="f-category"><option value="">All categories</option></select></label>
             <label>From (UTC) <input id="f-from" type="datetime-local" step="1"></label>
             <label>To (UTC) <input id="f-to" type="datetime-local" step="1"></label>
             <label>Order <select id="f-order"><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label>
@@ -74,7 +74,7 @@
           </div>
         </details>
       </form>
-      <p class="muted small">Tips: every word must match. Use "quotes" for an exact phrase, a trailing * for a prefix (ACC12*), and -word to exclude. Dots and other punctuation in UIDs and IPs are handled automatically.</p>
+      <p class="muted small">Any text is found anywhere in the events, including the middle of IDs, UIDs and words and inside stack traces (for example <code>840.1136</code> or <code>ACC000</code>). Upper/lower case and accents are ignored. Several words must all appear; use "quotes" for an exact phrase with spaces and -word to exclude. Choose a category to search only within it.</p>
       <div id="search-summary"></div>
       <div class="table-wrap"><table id="results" class="results"><thead><tr><th>Time</th><th>Level</th><th>Source</th><th>Category</th><th>Message</th></tr></thead><tbody></tbody></table></div>
       <div class="row"><button id="more" class="ghost hidden">Load more</button><a id="export" class="button ghost hidden" href="#">Export CSV</a></div>
@@ -99,7 +99,11 @@
 
     <section id="tab-sources" class="panel hidden">
       <div class="row between"><h1>Sources</h1><div><button id="scan-all" class="primary">Scan all enabled sources</button> <button id="scan-cancel" class="ghost">Cancel scan</button></div></div>
-      <p class="muted">Sources are only read, never changed. Each scan reads only what was added since the last scan.</p>
+      <div class="intro">
+        <p><strong>A source is one folder with log files.</strong> Add one source for each folder you want to analyse, for example the B3DWEB Gateway folder and the DICOM Router folder of each site. You can add as many folders as you need; they are searched together.</p>
+        <p class="muted small">Folders are only read, never changed. New lines are picked up automatically. Use <strong>Files</strong> to choose which files of a folder are analysed (at most 5 days).</p>
+      </div>
+      <h2 id="src-count">Your folders</h2>
       <div class="table-wrap"><table id="src-table"><thead><tr><th>Label</th><th>Type</th><th>Path</th><th>Time zone</th><th>Enabled</th><th>Last scan</th><th></th></tr></thead><tbody></tbody></table></div>
       <section id="chooser" class="chooser hidden" aria-labelledby="ch-title">
         <div class="row between"><h2 id="ch-title">Files analysed</h2><button id="ch-close" type="button" class="ghost">Close</button></div>
@@ -112,11 +116,15 @@
         <div class="table-wrap ch-wrap"><table id="ch-table"><thead><tr><th><span class="sr-only">Chosen</span></th><th>File</th><th>Modified</th><th>Size</th><th>Status</th></tr></thead><tbody></tbody></table></div>
         <div class="row"><button id="ch-save" type="button" class="primary">Save choice and scan</button><span id="ch-result" class="small"></span></div>
       </section>
-      <h2 id="src-form-title">Add a folder source</h2>
+      <h2 id="src-form-title">Add a folder</h2>
       <form id="src-form" class="form" autocomplete="off">
         <input type="hidden" id="s-id">
         <label>Label <input id="s-label" required maxlength="100" placeholder="e.g. Gateway site A"></label>
-        <label>Folder path <input id="s-path" required maxlength="1024" placeholder=""></label>
+        <label for="s-path">Folder path</label>
+        <div class="path-row">
+          <input id="s-path" required maxlength="1024" placeholder="">
+          <button type="button" id="s-browse" class="ghost">Browse…</button>
+        </div>
         <p id="s-path-help" class="muted small"></p>
         <label>Time zone of the logs <input id="s-tz" list="tz-list" maxlength="64" placeholder="e.g. Europe/Lisbon (needed for B3DWEB Gateway logs)"></label>
         <p id="s-tz-help" class="muted small"></p>
@@ -127,7 +135,7 @@
         <label class="check"><input id="s-enabled" type="checkbox" checked> Enabled</label>
         <div class="row">
           <button type="button" id="s-validate" class="ghost">Check path</button>
-          <button type="submit" class="primary" id="s-save">Add source and scan</button>
+          <button type="submit" class="primary" id="s-save">Add folder and scan</button>
           <button type="button" id="s-cancel" class="ghost hidden">Cancel editing</button>
         </div>
         <div id="s-result"></div>
@@ -174,6 +182,14 @@
       <div class="table-wrap"><table id="m-audit"><thead><tr><th>Time (UTC)</th><th>User</th><th>Action</th><th>Details</th></tr></thead><tbody></tbody></table></div>
     </section>
   </main>
+
+  <dialog id="fb" aria-labelledby="fb-title">
+    <div class="row between"><h2 id="fb-title">Choose a folder</h2><button id="fb-cancel" type="button" class="ghost">Cancel</button></div>
+    <p class="small muted" id="fb-path"></p>
+    <div class="row"><button id="fb-up" type="button" class="ghost">Up one level</button><button id="fb-roots" type="button" class="ghost">Start</button><span id="fb-info" class="small muted"></span></div>
+    <ul id="fb-list" class="fb-list"></ul>
+    <div class="row"><button id="fb-use" type="button" class="primary">Use this folder</button></div>
+  </dialog>
 
   <dialog id="detail" aria-labelledby="d-title">
     <div class="row between"><h2 id="d-title">Event</h2><button id="d-close" class="ghost" aria-label="Close">Close</button></div>
