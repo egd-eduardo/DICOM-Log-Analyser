@@ -42,6 +42,9 @@
   the choice is remembered by the browser. The interpretation is derived from the wording of the log entries
   (receipt, send, failure, retry and duplicate messages), so it is an aid to reading the evidence, not a verdict; the
   non-English texts were machine-written and should be reviewed by native speakers before clinical teams rely on them.
+  Queries (C-FIND) and retrieve requests (C-MOVE) are shown in the timeline but never counted as receipts; activity
+  before the first receipt is pointed out, since the study may then predate the indexed days. The recognition follows
+  the B3DWEB Gateway wording (`Receiving`, `Adding upload job`, `Beg/End upload`, `C-STORE-RQ … Dest AET`).
   Administrators can export masked **message patterns** (Maintenance) to help tune the recognition.
 * Overview: event, error and warning counts, per-source coverage, errors per day, categories/components, most
   frequent error patterns (identifiers masked) and files with read or parse problems.
@@ -77,7 +80,17 @@ repositories); it is then verified with `gh attestation verify <file> --repo egd
    `%LOCALAPPDATA%\Programs\DicomLogAnalyser`.
 2. Double-click **Start DICOM Log Analyser.cmd** (or `DicomLogAnalyser.exe`). A console window shows the status and
    your default browser opens, already signed in. No administrator rights and no .NET installation are needed.
-3. Keep the console window open. Press **O** in it to open the interface again; close it (or Ctrl+C) to stop.
+3. Keep the console window open. Press **O** in it to open the interface again and **Q** to stop; closing the window,
+   Ctrl+C or **Stop the analyser** (Maintenance tab) also stop it, within at most 10 seconds even during a scan.
+   Starting it a second time simply opens the browser on the copy that is already running. Clicking inside the window
+   no longer pauses the program (Windows QuickEdit is switched off for this window).
+
+**Several people on the same computer** (for example a Windows server with Remote Desktop): each Windows user starts
+their own copy. Each copy has its own data folder (`%LOCALAPPDATA%\DicomLogAnalyser`), its own random port and its own
+sign-in, so copies do not interfere and one user cannot open another user's copy: the loopback port is reachable by
+other sessions on the computer, but it accepts only the one-time sign-in link printed in its owner's window and the
+session cookie that follows. Each copy builds its own index of the same read-only log files, so disk use and the first
+scan are multiplied by the number of users; for a shared team view use the central mode instead.
 
 The packages are not code-signed yet: Windows SmartScreen may show "Windows protected your PC"; choose **More info**,
 then **Run anyway** (first time only). Use a build signed with your organisation's certificate for wider distribution.
@@ -134,8 +147,11 @@ them. A chosen file keeps being analysed after log rotation, under its original 
 you choose their content when you create the zip.
 
 **Check the time zone** for B3DWEB Gateway sources: their timestamps have no UTC offset. For a new source or bundle
-the field is pre-filled with the time zone of the computer running the browser (for example `Europe/Lisbon`); change
-it when the logs were written elsewhere. Editing a source shows its saved time zone.
+the field is pre-filled with the time zone of the computer running the browser (for example `Europe/Lisbon`) when the
+server recognises it, otherwise with the server's own time zone read from its operating system; change it when the
+logs were written elsewhere. The list offers every name the server accepts. Both forms work: IANA (`Europe/Lisbon`) and
+Windows (`GMT Standard Time`). Windows Server 2016 cannot translate IANA names by itself (it lacks the ICU library);
+a built-in table covers the European zones, and Windows names always work there. Editing a source shows its saved time zone.
 Without it, their times are shown as written and flagged as "local, zone unknown". DICOM Router timestamps include
 their offset and are always placed correctly on the UTC timeline. Changing the time zone re-indexes the source.
 

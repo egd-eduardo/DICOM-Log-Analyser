@@ -23,6 +23,13 @@ if (args.Contains("--help") || args.Contains("-h"))
 
 if (options.HealthCheck) return await HealthCheck(options).ConfigureAwait(false);
 
+if (options.Mode == AppMode.Local && OperatingSystem.IsWindows() && !Console.IsInputRedirected)
+{
+    // A click in the window must not pause the program (QuickEdit), which looks like a hang and blocks stopping it.
+    DicomLogAnalyser.Web.Platform.WindowsConsole.DisableQuickEdit();
+    Console.Title = "DICOM Log Analyser: press O to open, Q to stop";
+}
+
 // One instance per data folder: two writers on the same index would compete for the database lock.
 Directory.CreateDirectory(options.DataDirectory);
 FileStream instanceLock;
@@ -32,7 +39,16 @@ try
 }
 catch (IOException)
 {
+    // Started a second time by the same user: ask the running instance to open the browser instead of failing.
+    if (options.Mode == AppMode.Local && DicomLogAnalyser.Web.Platform.LocalInstance.TryOpenRunning(options.DataDirectory, TimeSpan.FromSeconds(3)))
+    {
+        Console.WriteLine("DICOM Log Analyser is already running for you; its browser page has been opened. This window closes by itself.");
+        await Task.Delay(TimeSpan.FromSeconds(3)).ConfigureAwait(false);
+        return 0;
+    }
+
     await Console.Error.WriteLineAsync("DICOM Log Analyser is already running with this data folder. Use its window (press O there to open the browser again).").ConfigureAwait(false);
+    PauseBeforeClosing();
     return 3;
 }
 
@@ -65,11 +81,15 @@ using (instanceLock)
             Console.WriteLine();
             Console.WriteLine($"DICOM Log Analyser {DicomLogAnalyser.Web.Api.Endpoints.Version} is running on this computer only ({baseUrl}).");
             Console.WriteLine("Data folder: " + Path.GetFullPath(options.DataDirectory));
-            Console.WriteLine("Nothing is sent to other computers or online services. Keep this window open; close it or press Ctrl+C to stop.");
+            Console.WriteLine("Nothing is sent to other computers or online services. Keep this window open while you use it.");
             if (options.OpenBrowser) OpenBrowser(baseUrl + "/launch?t=" + tokens.Issue());
             Console.WriteLine("Press O to open the interface in your browser (a new one-time link is created each time).");
+            Console.WriteLine("Press Q to stop. Closing this window, Ctrl+C or Stop in the Maintenance tab also stop it.");
             if (!options.OpenBrowser || Console.IsInputRedirected) Console.WriteLine("One-time sign-in link (valid 2 minutes): " + baseUrl + "/launch?t=" + tokens.Issue());
-            _ = Task.Run(() => KeyLoop(tokens, baseUrl, app.Lifetime.ApplicationStopping));
+            _ = Task.Run(() => KeyLoop(tokens, baseUrl, app.Lifetime));
+            _ = DicomLogAnalyser.Web.Platform.LocalInstance.ListenAsync(options.DataDirectory,
+                () => OpenBrowser(baseUrl + "/launch?t=" + tokens.Issue()), app.Lifetime.ApplicationStopping);
+            app.Lifetime.ApplicationStopping.Register(() => Console.WriteLine("Stopping. Scans in progress are interrupted; their files continue where they stopped next time."));
         }
         else
         {
@@ -82,14 +102,22 @@ using (instanceLock)
 
 return 0;
 
-static void KeyLoop(LaunchTokenService tokens, string baseUrl, CancellationToken ct)
+static void KeyLoop(LaunchTokenService tokens, string baseUrl, IHostApplicationLifetime lifetime)
 {
     if (Console.IsInputRedirected) return;
-    while (!ct.IsCancellationRequested)
+    while (!lifetime.ApplicationStopping.IsCancellationRequested)
     {
         var key = Console.ReadKey(intercept: true);
         if (key.Key == ConsoleKey.O) OpenBrowser(baseUrl + "/launch?t=" + tokens.Issue());
+        else if (key.Key is ConsoleKey.Q or ConsoleKey.Escape) lifetime.StopApplication();
     }
+}
+
+static void PauseBeforeClosing()
+{
+    if (Console.IsInputRedirected || !OperatingSystem.IsWindows()) return;
+    Console.WriteLine("Press any key to close this window.");
+    Console.ReadKey(intercept: true);
 }
 
 static void OpenBrowser(string url)

@@ -12,7 +12,7 @@ dotnet publish src/DicomLogAnalyser.Web -c Release -r "$rid" -o "$out"
 find "${out:?}" -maxdepth 1 -name '*.pdb' -delete
 cp README.md "$out/README.md"
 if [[ "$rid" == win-* ]]; then
-  printf '@echo off\r\nrem Starts DICOM Log Analyser on this computer only and opens the browser.\r\n"%%~dp0DicomLogAnalyser.exe" %%*\r\n' > "$out/Start DICOM Log Analyser.cmd"
+  printf '@echo off\r\nrem Starts DICOM Log Analyser in its own window (this computer only) and opens the browser. Press Q in that window to stop.\r\nstart "DICOM Log Analyser" "%%~dp0DicomLogAnalyser.exe" %%*\r\n' > "$out/Start DICOM Log Analyser.cmd"
 else
   printf '#!/bin/sh\n# Starts DICOM Log Analyser on this computer only and opens the browser.\ncd "$(dirname "$0")" && exec ./DicomLogAnalyser "$@"\n' > "$out/start.command"
   chmod +x "$out/start.command" "$out/DicomLogAnalyser"

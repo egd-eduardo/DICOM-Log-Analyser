@@ -188,7 +188,11 @@ public sealed partial class OverviewService(IndexDatabase db)
     [GeneratedRegex(@"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 250)]
     private static partial Regex Guid();
 
-    [GeneratedRegex(@"\S*\^\S*", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 250)]
+    /// <summary>
+    /// A DICOM person name (contains ^) and the words that follow it, up to a modality code, a token that starts with
+    /// a digit or bracket, or the end of the line: "SURNAME^GIVEN MIDDLE NAMES CT ..." is masked whole.
+    /// </summary>
+    [GeneratedRegex(@"\S*\^\S*(?:[ \t]+(?!(?:AR|AU|BI|BMD|CR|CT|DG|DOC|DX|ECG|EPS|ES|GM|HC|HD|IO|IVOCT|IVUS|KER|KO|LS|MG|MR|NM|OAM|OCT|OP|OPM|OPT|OT|PR|PT|PX|RF|RG|RTDOSE|RTIMAGE|RTPLAN|RTSTRUCT|SEG|SM|SMR|SR|SRF|TG|US|XA|XC)(?![\p{L}\d]))[^\s\d(\[]+)*", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 250)]
     private static partial Regex PersonName();
 
     [GeneratedRegex(@"[A-Za-z]*\d[\w\-]*", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 250)]

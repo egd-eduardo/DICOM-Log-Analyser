@@ -15,7 +15,7 @@ if ($LASTEXITCODE -ne 0) { throw 'dotnet publish failed' }
 Get-ChildItem -LiteralPath $out -Filter *.pdb | Remove-Item -Force
 Copy-Item README.md (Join-Path $out 'README.md')
 if ($Runtime -like 'win-*') {
-  Set-Content -LiteralPath (Join-Path $out 'Start DICOM Log Analyser.cmd') -Value "@echo off`r`nrem Starts DICOM Log Analyser on this computer only and opens the browser.`r`n`"%~dp0DicomLogAnalyser.exe`" %*" -Encoding ascii
+  Set-Content -LiteralPath (Join-Path $out 'Start DICOM Log Analyser.cmd') -Value "@echo off`r`nrem Starts DICOM Log Analyser in its own window (this computer only) and opens the browser. Press Q in that window to stop.`r`nstart `"DICOM Log Analyser`" `"%~dp0DicomLogAnalyser.exe`" %*" -Encoding ascii
 }
 Compress-Archive -Path $out -DestinationPath "$out.zip"
 (Get-FileHash "$out.zip" -Algorithm SHA256).Hash.ToLowerInvariant() + "  DicomLogAnalyser-$Runtime.zip" | Set-Content "$out.zip.sha256" -Encoding ascii

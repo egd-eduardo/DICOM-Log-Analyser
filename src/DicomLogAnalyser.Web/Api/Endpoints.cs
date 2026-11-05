@@ -81,6 +81,19 @@ public static class Endpoints
 
         api.MapGet("/categories", (OverviewService overview) => Results.Json(overview.Categories()));
 
+        // Time-zone names this server accepts, its own time zone, and whether the browser's zone is usable here.
+        api.MapGet("/timezones", (HttpContext ctx) =>
+        {
+            var prefer = ctx.Request.Query["prefer"].ToString().Trim();
+            var server = Core.Sources.TimeZones.Server;
+            return Results.Json(new
+            {
+                server = new { id = server.Id, name = server.DisplayName },
+                preferred = prefer.Length is > 0 and <= 64 && Core.Sources.TimeZones.Resolve(prefer) is not null ? prefer : null,
+                names = Core.Sources.TimeZones.KnownNames(),
+            });
+        });
+
         api.MapGet("/search", (HttpContext ctx, SearchService search) =>
         {
             var (request, error) = ParseSearch(ctx.Request.Query);
@@ -406,6 +419,19 @@ public static class Endpoints
             }
 
             audit.Write(SecurityMiddleware.CurrentSession(ctx).Identity, "patterns_exported", new Dictionary<string, object?> { ["rows"] = rows.Count });
+        });
+
+        // Local mode: stop the analyser from the browser (same as Q or closing its window).
+        admin.MapPost("/maintenance/stop", (HttpContext ctx, AppRuntime rt, IHostApplicationLifetime lifetime, AuditLog audit) =>
+        {
+            if (rt.Options.Mode != AppMode.Local) return Results.NotFound();
+            audit.Write(SecurityMiddleware.CurrentSession(ctx).Identity, "stopped");
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(300).ConfigureAwait(false);
+                lifetime.StopApplication();
+            });
+            return Results.Json(new { stopping = true });
         });
 
         admin.MapPost("/maintenance/clean-temp", (HttpContext ctx, AppPaths paths, AuditLog audit, ImportTracker tracker) =>

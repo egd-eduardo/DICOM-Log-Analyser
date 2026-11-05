@@ -170,13 +170,37 @@ function localTimeZone() {
   } catch { return ''; }
 }
 
-/** Pre-fills a time-zone field for new sources and bundles; the value can always be changed. @param {string} inputId @param {string} helpId */
-function prefillTimeZone(inputId, helpId) {
-  const tz = localTimeZone();
-  if (tz && !$(inputId).value) $(inputId).value = tz;
-  $(helpId).textContent = tz
-    ? `Pre-filled with this computer's time zone (${tz}). Change it if the logs were written in another time zone. DICOM Router logs include their own offset and ignore this setting.`
-    : 'Enter the time zone in which the logs were written, for example Europe/Lisbon.';
+/** Time zones this server accepts (loaded once): its own zone and whether the browser's zone is usable here. */
+/** @type {{server: {id: string, name: string}, preferred: string | null, names: string[]} | null} */
+let serverZones = null;
+
+async function loadServerZones() {
+  if (serverZones) return serverZones;
+  serverZones = await api('/api/timezones?prefer=' + encodeURIComponent(localTimeZone()));
+  const list = $('tz-list');
+  list.replaceChildren();
+  for (const z of serverZones.names) list.append(new Option(z));
+  return serverZones;
+}
+
+/**
+ * Pre-fills a time-zone field for new sources and bundles; the value can always be changed. Uses this computer's
+ * (browser) zone when the server recognises it, otherwise the server's own time zone from its operating system.
+ * @param {string} inputId @param {string} helpId
+ */
+async function prefillTimeZone(inputId, helpId) {
+  const browser = localTimeZone();
+  let zones = null;
+  try { zones = await loadServerZones(); } catch { /* list unavailable: free text only */ }
+  if (!zones) {
+    if (browser && !$(inputId).value) $(inputId).value = browser;
+    return;
+  }
+  const value = zones.preferred || zones.server.id;
+  if (!$(inputId).value) $(inputId).value = value;
+  $(helpId).textContent = zones.preferred
+    ? `Pre-filled with this computer's time zone (${value}). Change it if the logs were written in another time zone. DICOM Router logs include their own offset and ignore this setting.`
+    : `Pre-filled with the server's time zone (${zones.server.id}, ${zones.server.name}), read from its operating system${browser ? `; this server does not recognise the browser's zone ${browser}` : ''}. Change it if the logs were written in another time zone; the list shows every name this server accepts.`;
 }
 
 // ---------- Formatting ----------
@@ -1014,6 +1038,7 @@ function renderExam() {
   /** @param {string} key @param {Record<string, string | number>} [vars] */
   const say = (key, vars) => summary.append(el('p', '', tr(key, vars)));
   say(d.firstReceivedEstimated ? 'n_firstEst' : 'n_first', { time: examTime(d.firstReceivedTs), source: d.firstReceivedSource || '' });
+  if (d.priorActivityTs !== null && d.priorActivityTs !== undefined) say('n_prior', { time: examTime(d.priorActivityTs) });
   if (d.updates === 0) say('n_noUpdate');
   else say('n_update', { count: d.updates, time: examTime(d.updateTimes[d.updateTimes.length - 1]) });
   if (!d.seriesKnown && !d.firstReceivedEstimated) say('n_seriesUnknown');
@@ -1021,6 +1046,7 @@ function renderExam() {
   for (const s of d.destinations) {
     say('n_dest', { dest: s.destination, attempts: s.attempts, resends: s.resends, failures: s.failures, result: tr('r_' + s.lastResult), time: examTime(s.lastResultTs) });
   }
+  if (d.firstQueuedTs !== null && d.firstQueuedTs !== undefined) say('n_queued', { time: examTime(d.firstQueuedTs) });
   if (d.finalSeriesTs !== null && d.finalSeriesTs !== undefined) {
     say('n_final', { time: examTime(d.finalSeriesTs) });
     if (d.lastEntryTs !== null && d.lastEntryTs > d.finalSeriesTs) say('n_lastLater', { time: examTime(d.lastEntryTs) });
@@ -1178,6 +1204,13 @@ async function start() {
   $('imp-form').addEventListener('submit', (/** @type {Event} */ ev) => { ev.preventDefault(); upload(); });
   $('m-clean').addEventListener('click', () => api('/api/maintenance/clean-temp', { method: 'POST', body: '{}' }).then((r) => { notify(r.remaining ? `${r.remaining} item(s) could not be removed.` : 'Temporary files deleted.', true); loadMaintenance(); }).catch((e) => notify(e.message)));
   $('fs-start').addEventListener('click', startFreshSession);
+  $('m-stop').addEventListener('click', async () => {
+    if (!window.confirm('Stop DICOM Log Analyser on this computer? Searches stop working until it is started again; indexed data is kept.')) return;
+    try {
+      await api('/api/maintenance/stop', { method: 'POST', body: '{}' });
+      document.querySelector('main')?.replaceChildren(el('p', 'notice info', 'DICOM Log Analyser has stopped. You can close this tab; start the program again to continue.'));
+    } catch (e) { notify(/** @type {Error} */ (e).message); }
+  });
 
   try {
     session = await api('/api/session');
@@ -1187,10 +1220,9 @@ async function start() {
     const note = el('p', 'muted small', 'You have read-only access (viewer): overview, search and event details. Adding sources, importing, exporting and deleting need the administrator role.');
     $('tab-overview').insertBefore(note, $('ov-cards'));
   }
+  $('m-stop').classList.toggle('hidden', session.mode !== 'local');
   const fmt = $('s-format');
   for (const f of session.formats) fmt.append(new Option(f.name, f.id));
-  const tzl = $('tz-list');
-  try { for (const z of /** @type {any} */ (Intl).supportedValuesOf('timeZone')) tzl.append(new Option(z)); } catch { /* older browser: free text only */ }
   $('s-path-help').textContent = session.mode === 'server'
     ? 'Container path inside ' + session.sourceRoots.join(' or ') + ' (a read-only volume in compose.yaml). Windows drive letters and UNC paths cannot be used directly here.'
     : session.platform === 'windows' ? 'Examples: C:\\3dnet\\DicomRouter\\logs, Z:\\3dnet\\audits\\Gateway\\0 or \\\\server\\share\\logs'

@@ -118,4 +118,97 @@ public class ExamTests
             Assert.DoesNotContain(secret, all, StringComparison.Ordinal);
         Assert.Contains(rows, r => r.Pattern.Contains("C-STORE to TESTPACS failed", StringComparison.Ordinal) && r.Level == "error");
     }
+
+    // ---- B3DWEB Gateway wording (synthetic copy of the real layout) ----
+
+    private static long Nov4(int h, int m, int s) => new DateTimeOffset(2026, 11, 4, h, m, s, TimeSpan.Zero).ToUnixTimeMilliseconds();
+
+    private static (IndexFixture F, ExamHistoryService Exams) SetupGateway()
+    {
+        var f = new IndexFixture();
+        var gw = f.Temp.Sub("b3d");
+        File.Copy(IndexFixture.Fixture("exam/Gateway-b3dweb-exam.log"), Path.Combine(gw, "Gateway.log"));
+        var id = f.Sources.Add(new SourceDefinition { Label = "Gateway", Kind = SourceKinds.Folder, Path = gw, TimeZone = "Europe/Lisbon" });
+        f.Ingestor.Scan(f.Sources.Get(id)!, null, CancellationToken.None);
+        return (f, new ExamHistoryService(f.Search));
+    }
+
+    [Fact]
+    public void Gateway_queries_and_retrievals_are_not_receipts_and_earlier_activity_is_reported()
+    {
+        var (f, exams) = SetupGateway();
+        using var _ = f;
+        var h = exams.Build("SYNA0001REP");
+
+        Assert.Equal(19, h.Entries);
+        Assert.Equal(6, h.Timeline.Count(e => e.Milestone == Milestone.Query));
+        Assert.Equal(4, h.Timeline.Count(e => e.Milestone == Milestone.Retrieve));
+        Assert.Equal(4, h.Timeline.Count(e => e.Milestone == Milestone.Received));
+
+        // Entered the queue at the first receipt of images, not at the queries or the C-MOVE hours earlier.
+        Assert.Equal(Nov4(8, 16, 19), h.FirstReceivedTs);
+        Assert.Equal(Nov4(3, 3, 50), h.PriorActivityTs);
+        Assert.Equal(0, h.Updates);
+        Assert.Equal(["2.25.900001.11", "2.25.900001.12", "2.25.900001.13", "2.25.900001.14"], h.Series.Select(x => x.SeriesUid).ToArray());
+        Assert.Equal(Nov4(8, 16, 31), h.FinalSeriesTs);
+        Assert.Equal(Nov4(8, 16, 40), h.FirstQueuedTs);
+        Assert.Equal(Nov4(8, 17, 30), h.LastEntryTs);
+
+        // "(5425 OK, 0 Warn, 0 Fail),Status Success" is a success; "to be uploaded" names no destination.
+        Assert.Equal(["Cloud upload", "TESTCACHE"], h.Destinations.Select(d => d.Destination).ToArray());
+        var cache = h.Destinations.Single(d => d.Destination == "TESTCACHE");
+        Assert.Equal((1, 0, 0, "success", Nov4(3, 9, 27)), (cache.Attempts, cache.Resends, cache.Failures, cache.LastResult, cache.LastResultTs!.Value));
+        var upload = h.Destinations.Single(d => d.Destination == ExamHistoryService.UploadDestination);
+        Assert.Equal((1, 0, 0, "success"), (upload.Attempts, upload.Resends, upload.Failures, upload.LastResult));
+        Assert.Equal(0, h.TotalFailures);
+        Assert.Equal(["2.25.900001"], h.RelatedStudyUids);
+        Assert.DoesNotContain(h.Timeline, e => e.Event.Message.Contains("SYNA0009REP", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Gateway_update_wave_and_second_upload_is_not_a_resend()
+    {
+        var (f, exams) = SetupGateway();
+        using var _ = f;
+        var h = exams.Build("SYNA0002REP");
+
+        Assert.Equal(13, h.Entries);
+        Assert.Equal(Nov4(8, 13, 20), h.FirstReceivedTs);
+        Assert.Null(h.PriorActivityTs);
+        Assert.Equal(1, h.Updates);
+        Assert.Equal([Nov4(8, 40, 0)], h.UpdateTimes);
+        Assert.Equal(7, h.Series.Count);
+        Assert.Equal(["2.25.900002.7"], h.Series.Where(x => x.IsUpdate).Select(x => x.SeriesUid).ToArray());
+        Assert.Equal(Nov4(8, 40, 0), h.FinalSeriesTs);
+        Assert.Equal(Nov4(8, 14, 25), h.FirstQueuedTs);
+        var upload = h.Destinations.Single();
+        Assert.Equal((ExamHistoryService.UploadDestination, 2, 0, 0, "success"), (upload.Destination, upload.Attempts, upload.Resends, upload.Failures, upload.LastResult));
+        Assert.Equal(Nov4(8, 41, 0), h.LastEntryTs);
+    }
+
+    [Theory]
+    [InlineData("C-STORE-RQ (Single Send) sending ... done! [Dest AET TESTCACHE] 10 messages (10 OK, 0 Warn, 0 Fail),Status Success", Milestone.SendSucceeded, "TESTCACHE")]
+    [InlineData("C-STORE-RQ (Single Send) sending ... done! [Dest AET TESTCACHE] 10 messages (7 OK, 0 Warn, 3 Fail),Status Failure", Milestone.SendFailed, "TESTCACHE")]
+    [InlineData("Received Study Root Query/Retrieve Information Model - FIND - STUDY from TESTCACHE with attributes AccessionNumber - SYNA1REP ... send 1 reponse(s) complete", Milestone.Query, null)]
+    [InlineData("Received CMove Study Root Query/Retrieve Information Model - MOVE - STUDY from TESTCACHE", Milestone.Retrieve, null)]
+    [InlineData("Adding upload job TESTMOD01 2.25.900003 SYNA3REP dicom to be uploaded 5 skipped 0", Milestone.Queued, null)]
+    [InlineData("End upload (0005) SYNA3REP SYNTHETIC^X CT Site 2.25.900003  successfully uploaded.", Milestone.SendSucceeded, "Cloud upload")]
+    [InlineData("Receiving (1) ... PID SYNPID3, ANR SYNA3REP, Mod CT, TESTMOD01 192.0.2.1:5 -> GATEWAYAE 192.0.2.2:104, #Ser 1, StUID 2.25.900003, SeUID 2.25.900003.1", Milestone.Received, null)]
+    public void Classifies_gateway_wording(string message, Milestone expected, string? destination)
+    {
+        var e = new EventSummary(1, 1, "s", "f", 1, 1, 0, true, null, EventLevel.Info, "INF", EventKind.Record, "SCU", null, message, false, false);
+        var c = ExamHistoryService.Classify(e);
+        Assert.Equal(expected, c.Milestone);
+        Assert.Equal(destination, c.Destination);
+    }
+
+    [Theory]
+    [InlineData("C-MOVE SYNA0001REP SYNTHETIC^PATIENT ONE TWO Vascular^Angio_Test (Adult) CT 2.25.900001 ...")]
+    [InlineData("Beg upload (0987) SYNA0002REP SYNTHETIC^PATIENT ONE TWO SR Example Site Thorax^Test (Adult) 2.25.900002  ... IsLAN:False HttpClient")]
+    public void Masked_patterns_remove_every_part_of_a_multi_word_name(string message)
+    {
+        var sig = OverviewService.Signature(message);
+        foreach (var part in new[] { "SYNTHETIC", "PATIENT", "ONE", "TWO", "SYNA", "2.25" })
+            Assert.DoesNotContain(part, sig, StringComparison.Ordinal);
+    }
 }

@@ -60,6 +60,44 @@ public sealed class WebSecurityTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Stop_from_the_browser_stops_the_local_instance()
+    {
+        var (cookie, csrf) = await SignIn();
+        var stopping = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _app.Lifetime.ApplicationStopping.Register(() => stopping.TrySetResult());
+        using var req = new HttpRequestMessage(HttpMethod.Post, Base + "/api/maintenance/stop");
+        req.Headers.Add("Cookie", cookie);
+        req.Headers.Add("Origin", Base);
+        req.Headers.Add(SecurityMiddleware.CsrfHeader, csrf);
+        req.Content = JsonContent.Create(new { });
+        using (var res = await _http.SendAsync(req)) Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+        await stopping.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Contains(_app.Services.GetRequiredService<DicomLogAnalyser.Core.Diagnostics.AuditLog>().Recent(5), a => a.Action == "stopped");
+    }
+
+    [Fact]
+    public async Task Time_zone_list_offers_the_server_zone_and_accepted_names()
+    {
+        var (cookie, _) = await SignIn();
+        async Task<JsonElement> Get(string prefer)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, Base + "/api/timezones?prefer=" + Uri.EscapeDataString(prefer));
+            req.Headers.Add("Cookie", cookie);
+            using var res = await _http.SendAsync(req);
+            Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+            return await res.Content.ReadFromJsonAsync<JsonElement>();
+        }
+
+        var lisbon = await Get("Europe/Lisbon");
+        Assert.Equal("Europe/Lisbon", lisbon.GetProperty("preferred").GetString());
+        Assert.Equal(TimeZoneInfo.Local.Id, lisbon.GetProperty("server").GetProperty("id").GetString());
+        var names = lisbon.GetProperty("names").EnumerateArray().Select(n => n.GetString()).ToList();
+        Assert.Contains(TimeZoneInfo.Local.Id, names);
+        Assert.All(names, n => Assert.NotNull(DicomLogAnalyser.Core.Sources.TimeZones.Resolve(n)));
+        Assert.Equal(JsonValueKind.Null, (await Get("Nowhere/Atlantis")).GetProperty("preferred").ValueKind);
+    }
+
+    [Fact]
     public async Task Exam_languages_and_flags_are_served_from_the_allow_list_only()
     {
         using var langs = await _http.GetAsync(new Uri(Base + "/exam-i18n.json"));
@@ -419,6 +457,7 @@ public sealed class ServerModeTests : IAsyncLifetime
     [InlineData("POST", "/api/folders/pick")]
     [InlineData("GET", "/api/folders")]
     [InlineData("GET", "/api/maintenance/patterns.csv")]
+    [InlineData("POST", "/api/maintenance/stop")]
     public async Task Viewers_cannot_change_export_or_administer(string method, string path)
     {
         await Start("127.0.0.1/32");
@@ -454,6 +493,8 @@ public sealed class ServerModeTests : IAsyncLifetime
             Assert.Contains("secret-share-name", await src.Content.ReadAsStringAsync(), StringComparison.Ordinal);
         using (var scan = await Send(HttpMethod.Post, "/api/scan", "admin@example.org", new { })) Assert.Equal(HttpStatusCode.Accepted, scan.StatusCode);
         using (var m = await Send(HttpMethod.Get, "/api/maintenance", "admin@example.org")) Assert.Equal(HttpStatusCode.OK, m.StatusCode);
+        using (var stop = await Send(HttpMethod.Post, "/api/maintenance/stop", "admin@example.org", new { })) Assert.Equal(HttpStatusCode.NotFound, stop.StatusCode);
+        Assert.False(_app.Lifetime.ApplicationStopping.IsCancellationRequested);
     }
 
     [Fact]

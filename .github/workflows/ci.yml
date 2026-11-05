@@ -96,6 +96,11 @@ jobs:
           global-json-file: global.json
       - run: dotnet restore DicomLogAnalyser.slnx --locked-mode
       - run: dotnet test DicomLogAnalyser.slnx -c Release --no-restore
+      - name: Time zones without ICU (NLS mode, as on Windows Server 2016)
+        if: runner.os == 'Windows'
+        env:
+          DOTNET_SYSTEM_GLOBALIZATION_USENLS: "true"
+        run: dotnet test DicomLogAnalyser.slnx -c Release --no-build --filter "FullyQualifiedName~TimeZone"
       - name: Publish self-contained single file
         run: dotnet publish src/DicomLogAnalyser.Web -c Release -r ${{ matrix.rid }} -o publish
       - name: Start, check loopback-only listener and authentication, stop

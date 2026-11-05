@@ -20,6 +20,11 @@ anything that does not arrive through the access proxy.
 
 ## Local mode
 
+* **Several users on one computer:** each Windows user runs a separate copy with its own data folder, random port,
+  launch tokens and session cookie. Other sessions can reach the loopback port but cannot sign in without the one-time
+  link shown only in the owner's window. A second start by the same user hands over through a named pipe created with
+  `PipeOptions.CurrentUserOnly` (other users can neither connect nor create it); it carries a single "open" byte and
+  no data. **Stop the analyser** (`POST /api/maintenance/stop`) exists only in local mode and is recorded.
 * **Binding:** Kestrel listens on `127.0.0.1` only. No external configuration source is loaded
   (`WebApplication.CreateEmptyBuilder`), so `ASPNETCORE_URLS`, `appsettings.json` or `--urls` cannot add a binding.
   After start, every bound address is verified and the program stops if one is not loopback.
@@ -111,7 +116,7 @@ Routine logs contain source ids, counts and exception **type names** with a corr
 messages, paths, search terms, identities of refused users, or log content. ASP.NET Core framework logging is limited
 to warnings. Error responses are generic with the same reference. The activity record holds actor, action and ids.
 The exam history and its query are not recorded. The message-pattern export (administrators only, recorded with its
-row count) masks anything containing a digit, GUIDs, quoted text and `SURNAME^GIVEN` names; a name or path written
+row count) masks anything containing a digit, GUIDs, quoted text and `SURNAME^GIVEN MIDDLE` names (up to the modality code); a name or path written
 in another form is not recognised, so the file must be reviewed before it leaves the organisation.
 
 ## OWASP ASVS 5.0 mapping

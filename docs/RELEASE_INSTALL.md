@@ -13,7 +13,8 @@ No installation, no .NET and no administrator rights are needed.
 ## Windows
 
 1. Extract the zip into a folder you own on the local disk (for example `%LOCALAPPDATA%\Programs\DicomLogAnalyser`).
-2. Double-click **Start DICOM Log Analyser.cmd**. The packages are not code-signed yet: if Windows shows "Windows protected
+2. Double-click **Start DICOM Log Analyser.cmd** (it opens the program in its own window and closes; press **Q** in that
+   window, close it, or use **Stop the analyser** in the Maintenance tab to stop). The packages are not code-signed yet: if Windows shows "Windows protected
    your PC", choose **More info**, then **Run anyway** (first time only).
 3. Your browser opens the analyser, already signed in. Keep the console window open; press **O** in it to reopen the
    browser, close it to stop.

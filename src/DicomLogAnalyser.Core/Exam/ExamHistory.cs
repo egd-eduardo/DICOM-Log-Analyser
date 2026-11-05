@@ -15,6 +15,8 @@ public enum Milestone
     SendSucceeded,
     Retry,
     Duplicate,
+    Query,
+    Retrieve,
 }
 
 public sealed record ExamEntry(EventSummary Event, Milestone Milestone, string? SeriesUid, string? Destination, bool IsUpdate);
@@ -47,6 +49,8 @@ public sealed record ExamHistory(
     long? FinalSeriesEventId,
     long? LastEntryTs,
     long? LastEntryEventId,
+    long? FirstQueuedTs,
+    long? PriorActivityTs,
     IReadOnlyList<string> RelatedStudyUids,
     IReadOnlyList<ExamEntry> Timeline,
     bool Truncated,
@@ -92,14 +96,42 @@ public sealed partial class ExamHistoryService(SearchService search)
     [GeneratedRegex(@"\bduplicate\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 250)]
     private static partial Regex DuplicateWords();
 
-    [GeneratedRegex(@"\bseries(?:\s*instance)?(?:\s*uid)?\s*[=:]?\s*(\d+(?:\.\d+){2,})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 250)]
+    /// <summary>Queries (C-FIND) about the exam: not a receipt of images.</summary>
+    [GeneratedRegex(@"\b(?:C-?FIND\b|Information Model\s*-\s*FIND\b|FIND\s*-\s*(?:STUDY|SERIES|PATIENT|IMAGE)\b)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 250)]
+    private static partial Regex QueryWords();
+
+    /// <summary>Retrieve requests (C-MOVE, C-GET) for the exam, as opposed to the C-STORE that delivers it.</summary>
+    [GeneratedRegex(@"\b(?:C-?MOVE|C-?GET)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 250)]
+    private static partial Regex RetrieveWords();
+
+    /// <summary>A job placed in a send or upload queue.</summary>
+    [GeneratedRegex(@"\b(?:adding\s+(?:upload|send|transfer)\s+job|(?:upload|send|transfer)\s+job\s+added)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 250)]
+    private static partial Regex QueueJobWords();
+
+    /// <summary>Uploads to the cloud, which do not name a DICOM destination.</summary>
+    [GeneratedRegex(@"\b(?:beg(?:in)?\s+upload|end\s+upload|upload(?:ing|ed)?)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 250)]
+    private static partial Regex UploadWords();
+
+    [GeneratedRegex(@"\bC-?STORE(?:-RQ)?\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 250)]
+    private static partial Regex StoreWords();
+
+    /// <summary>Zero counters such as "0 Fail", "0 Warn" or "Warnings: 0", which report the absence of a failure.</summary>
+    [GeneratedRegex(@"\b0\s+(?:fail\w*|warn\w*|errors?)\b|\b(?:fail\w*|warnings?|errors?|retries)\s*[:=]?\s*0\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 250)]
+    private static partial Regex ZeroCounters();
+
+    [GeneratedRegex(@"\b(?:series(?:\s*instance)?(?:\s*uid)?|SeUID)\s*[-=:]?\s*(\d+(?:\.\d+){2,})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 250)]
     private static partial Regex SeriesUid();
 
-    [GeneratedRegex(@"\bstudy(?:\s*instance)?(?:\s*uid)?\s*[=:]?\s*(\d+(?:\.\d+){2,})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 250)]
+    [GeneratedRegex(@"\b(?:study(?:\s*instance)?(?:\s*uid)?|StUID)\s*[-=:]?\s*(\d+(?:\.\d+){2,})", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, 250)]
     private static partial Regex StudyUid();
 
-    [GeneratedRegex(@"\b(?:to|destination)\s+(?:destination\s+|AE\s+|node\s+)?([A-Za-z][A-Za-z0-9_\-]{1,63})", RegexOptions.CultureInvariant, 250)]
+    [GeneratedRegex(@"\b(?:Dest(?:ination)?\s+AET|destination|to)\s+(?:destination\s+|AE\s+|AET\s+|node\s+)?([A-Za-z][A-Za-z0-9_\-]{1,63})", RegexOptions.CultureInvariant, 250)]
     private static partial Regex DestinationName();
+
+    /// <summary>Destination shown for uploads to the cloud, which name no DICOM destination.</summary>
+    public const string UploadDestination = "Cloud upload";
+
+    private static readonly HashSet<string> NotDestinations = new(["be", "the", "a", "an", "send", "upload", "server", "queue"], StringComparer.OrdinalIgnoreCase);
 
     public ExamHistory Build(string query, IReadOnlyList<long>? sourceIds = null)
     {
@@ -123,7 +155,7 @@ public sealed partial class ExamHistoryService(SearchService search)
         // An identifier must match exactly: SYNEXAM01 must not pull in SYNEXAM010, nor a UID a longer UID.
         var exact = identifier.Any(char.IsWhiteSpace)
             ? null
-            : new Regex("(?<![A-Za-z0-9.])" + Regex.Escape(identifier) + "(?![A-Za-z0-9])", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(250));
+            : new Regex("(?<![A-Za-z0-9.])" + Regex.Escape(identifier) + "(?![A-Za-z0-9]|\\.\\d)", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant, TimeSpan.FromMilliseconds(250));
         var count = 0;
         foreach (var e in search.Export(request, MaxEntries))
         {
@@ -182,7 +214,9 @@ public sealed partial class ExamHistoryService(SearchService search)
         {
             var results = g.Where(e => e.Milestone is Milestone.SendFailed or Milestone.SendSucceeded).ToList();
             var counted = results.Count > 0 ? results : g.ToList();
-            var resends = counted.GroupBy(e => e.SeriesUid ?? "(study)").Sum(s => Math.Max(0, s.Count() - 1));
+            // Without a series UID, a send after an update carries the new series, so it is not a resend.
+            var resends = counted.GroupBy(e => e.SeriesUid ?? "(study)#" + updateTimes.Count(u => u <= (e.Event.Timestamp ?? long.MinValue)))
+                .Sum(s => Math.Max(0, s.Count() - 1));
             var last = results.LastOrDefault();
             destinations.Add(new DestinationSends(g.Key, counted.Count, resends, results.Count(e => e.Milestone == Milestone.SendFailed),
                 last is null ? "unknown" : last.Milestone == Milestone.SendSucceeded ? "success" : "failure", last?.Event.Timestamp, last?.Event.Id));
@@ -193,6 +227,17 @@ public sealed partial class ExamHistoryService(SearchService search)
         var finalArrival = received.LastOrDefault();
         var lastEntry = events.LastOrDefault(e => e.Timestamp is not null);
         var timeline = entries.Select(e => e with { IsUpdate = updateEvents.Contains(e.Event.Id) }).ToList();
+        var firstQueued = entries.FirstOrDefault(e => e.Milestone == Milestone.Queued && e.Event.Timestamp is not null)?.Event.Timestamp;
+
+        // Queries, retrievals or sends before the first receipt: the exam existed before the indexed period.
+        long? prior = null;
+        if (firstReceived?.Event.Timestamp is { } firstTs)
+        {
+            prior = entries.Where(e => e.Event.Timestamp < firstTs && e.Milestone is Milestone.Query or Milestone.Retrieve or Milestone.SendAttempt
+                    or Milestone.SendFailed or Milestone.SendSucceeded)
+                .Select(e => e.Event.Timestamp).Min();
+        }
+
         return new ExamHistory(
             query,
             events.Count,
@@ -213,6 +258,8 @@ public sealed partial class ExamHistoryService(SearchService search)
             finalArrival?.Event.Id,
             lastEntry?.Timestamp,
             lastEntry?.Id,
+            firstQueued,
+            prior,
             studies,
             timeline,
             truncated,
@@ -227,15 +274,21 @@ public sealed partial class ExamHistoryService(SearchService search)
         Milestone milestone;
         try
         {
-            var send = SendWords().IsMatch(text);
-            var failed = e.Level >= EventLevel.Error || FailureWords().IsMatch(text);
-            if (DuplicateWords().IsMatch(text)) milestone = Milestone.Duplicate;
-            else if (RetryWords().IsMatch(text)) milestone = Milestone.Retry;
+            // "0 Fail", "Warnings: 0" and similar counters report that nothing failed.
+            var wording = ZeroCounters().Replace(text, " ");
+            var store = StoreWords().IsMatch(wording);
+            var send = store || SendWords().IsMatch(wording);
+            var failed = e.Level >= EventLevel.Error || FailureWords().IsMatch(wording);
+            if (DuplicateWords().IsMatch(wording)) milestone = Milestone.Duplicate;
+            else if (RetryWords().IsMatch(wording)) milestone = Milestone.Retry;
+            else if (QueryWords().IsMatch(wording)) milestone = Milestone.Query;
+            else if (QueueJobWords().IsMatch(wording)) milestone = Milestone.Queued;
             else if (send && failed) milestone = Milestone.SendFailed;
-            else if (send && SuccessWords().IsMatch(text)) milestone = Milestone.SendSucceeded;
-            else if (send) milestone = Milestone.SendAttempt;
-            else if (ReceiveWords().IsMatch(text) && !failed) milestone = Milestone.Received;
-            else if (QueueWords().IsMatch(text)) milestone = Milestone.Queued;
+            else if (send && SuccessWords().IsMatch(wording)) milestone = Milestone.SendSucceeded;
+            else if (store || (send && !RetrieveWords().IsMatch(wording))) milestone = Milestone.SendAttempt;
+            else if (RetrieveWords().IsMatch(wording)) milestone = Milestone.Retrieve;
+            else if (ReceiveWords().IsMatch(wording) && !failed) milestone = Milestone.Received;
+            else if (QueueWords().IsMatch(wording)) milestone = Milestone.Queued;
             else milestone = Milestone.Other;
         }
         catch (RegexMatchTimeoutException)
@@ -251,8 +304,19 @@ public sealed partial class ExamHistoryService(SearchService search)
             if (s.Success) seriesUid = s.Groups[1].Value;
             if (milestone is Milestone.SendAttempt or Milestone.SendFailed or Milestone.SendSucceeded or Milestone.Retry)
             {
-                var d = DestinationName().Match(text);
-                if (d.Success) destination = d.Groups[1].Value;
+                if (!StoreWords().IsMatch(text) && UploadWords().IsMatch(text))
+                {
+                    destination = UploadDestination;
+                }
+                else
+                {
+                    foreach (Match d in DestinationName().Matches(text))
+                    {
+                        if (NotDestinations.Contains(d.Groups[1].Value)) continue;
+                        destination = d.Groups[1].Value;
+                        break;
+                    }
+                }
             }
         }
         catch (RegexMatchTimeoutException)
