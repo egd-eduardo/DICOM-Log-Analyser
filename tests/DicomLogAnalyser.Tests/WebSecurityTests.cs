@@ -60,6 +60,42 @@ public sealed class WebSecurityTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Exam_languages_and_flags_are_served_from_the_allow_list_only()
+    {
+        using var langs = await _http.GetAsync(new Uri(Base + "/exam-i18n.json"));
+        Assert.Equal(HttpStatusCode.OK, langs.StatusCode);
+        Assert.StartsWith("application/json", langs.Content.Headers.ContentType!.ToString(), StringComparison.Ordinal);
+        var doc = await langs.Content.ReadFromJsonAsync<JsonElement>();
+        var order = doc.GetProperty("order").EnumerateArray().Select(e => e.GetString()!).ToList();
+        Assert.Equal(["en", "es", "pt", "fr", "lt", "hu", "it", "el", "tr", "hr", "de"], order);
+
+        var english = doc.GetProperty("languages").GetProperty("en");
+        var placeholder = new System.Text.RegularExpressions.Regex(@"\{[a-z]+\}");
+        foreach (var code in order)
+        {
+            var lang = doc.GetProperty("languages").GetProperty(code);
+            foreach (var key in english.EnumerateObject())
+            {
+                var text = lang.GetProperty(key.Name).GetString()!;
+                Assert.False(string.IsNullOrWhiteSpace(text), $"{code}.{key.Name} is empty");
+                var expected = placeholder.Matches(key.Value.GetString()!).Select(m => m.Value).Order().ToList();
+                Assert.Equal(expected, placeholder.Matches(text).Select(m => m.Value).Order().ToList());
+            }
+
+            using var flag = await _http.GetAsync(new Uri(Base + "/flags/" + lang.GetProperty("flag").GetString() + ".svg"));
+            Assert.Equal(HttpStatusCode.OK, flag.StatusCode);
+            Assert.Equal("image/svg+xml", flag.Content.Headers.ContentType!.MediaType);
+            Assert.StartsWith("<svg", (await flag.Content.ReadAsStringAsync()).TrimStart(), StringComparison.Ordinal);
+        }
+
+        using (var unknown = await _http.GetAsync(new Uri(Base + "/flags/xx.svg"))) Assert.Equal(HttpStatusCode.NotFound, unknown.StatusCode);
+        using (var traversal = await _http.GetAsync(new Uri(Base + "/flags/..%2Fapp.js"))) Assert.Equal(HttpStatusCode.NotFound, traversal.StatusCode);
+        using var post = new HttpRequestMessage(HttpMethod.Post, Base + "/flags/gb.svg");
+        post.Headers.Add("Origin", Base);
+        using (var res = await _http.SendAsync(post)) Assert.Equal(HttpStatusCode.MethodNotAllowed, res.StatusCode);
+    }
+
+    [Fact]
     public async Task Api_requires_a_session_and_launch_tokens_are_single_use()
     {
         using (var res = await _http.GetAsync(new Uri(Base + "/api/overview"))) Assert.Equal(HttpStatusCode.Unauthorized, res.StatusCode);
@@ -382,6 +418,7 @@ public sealed class ServerModeTests : IAsyncLifetime
     [InlineData("POST", "/api/maintenance/fresh-session")]
     [InlineData("POST", "/api/folders/pick")]
     [InlineData("GET", "/api/folders")]
+    [InlineData("GET", "/api/maintenance/patterns.csv")]
     public async Task Viewers_cannot_change_export_or_administer(string method, string path)
     {
         await Start("127.0.0.1/32");

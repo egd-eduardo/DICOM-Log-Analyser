@@ -161,6 +161,27 @@ public sealed partial class OverviewService(IndexDatabase db)
         return new Overview(events, errors, warnings, unparsed, exceptions, sources, categories, days, top, problems);
     }
 
+    /// <summary>
+    /// Message patterns for tuning the exam-history rules: one row per distinct masked message (identifiers, numbers,
+    /// names, quoted values and IPs replaced), with category, level and count. Contains no patient data by design, but
+    /// should still be reviewed before it leaves the computer.
+    /// </summary>
+    public IReadOnlyList<(string Format, string Category, string Level, string Pattern, long Count)> MessagePatterns(int maxRows = 2000)
+    {
+        var counts = new Dictionary<(string, string, string, string), long>();
+        using var c = db.Open();
+        using var cmd = c.CreateCommand();
+        cmd.CommandText = "SELECT f.format, e.category, e.level, substr(e.message, 1, 300) FROM events e JOIN files f ON f.id = e.file_id WHERE e.kind = 0";
+        using var r = cmd.ExecuteReader();
+        while (r.Read())
+        {
+            var key = (r.IsDBNull(0) ? "" : r.GetString(0), r.GetString(1), LevelName((EventLevel)r.GetInt32(2)), Signature(r.GetString(3)));
+            counts[key] = counts.TryGetValue(key, out var n) ? n + 1 : 1;
+        }
+
+        return counts.OrderByDescending(kv => kv.Value).Take(maxRows).Select(kv => (kv.Key.Item1, kv.Key.Item2, kv.Key.Item3, kv.Key.Item4, kv.Value)).ToList();
+    }
+
     [GeneratedRegex(@"\b\d+(?:\.\d+){2,}\b", RegexOptions.CultureInvariant, matchTimeoutMilliseconds: 250)]
     private static partial Regex UidOrIp();
 

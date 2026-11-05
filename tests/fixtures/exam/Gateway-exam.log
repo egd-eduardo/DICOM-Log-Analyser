@@ -1,0 +1,13 @@
+INF 2026.11.03 09:59:00 SPS - Study received from AE TESTMOD02 (192.0.2.11): Accession=SYNOTHER9 StudyInstanceUID=2.25.700099 SeriesInstanceUID=2.25.700099.1
+INF 2026.11.03 10:00:00 SPS - Study received from AE TESTMOD01 (192.0.2.10): PatientName=SYNTHETIC^EXAM Accession=SYNEXAM01 StudyInstanceUID=2.25.700001 SeriesInstanceUID=2.25.700001.1
+INF 2026.11.03 10:00:20 SPS - Study received from AE TESTMOD01 (192.0.2.10): Accession=SYNEXAM01 StudyInstanceUID=2.25.700001 SeriesInstanceUID=2.25.700001.2
+INF 2026.11.03 10:01:00 SCU - C-STORE to TESTPACS started for Accession=SYNEXAM01 SeriesInstanceUID=2.25.700001.1
+ERROR 2026.11.03 10:01:30 SCU - C-STORE to TESTPACS failed for Accession=SYNEXAM01 SeriesInstanceUID=2.25.700001.1
+System.Net.Sockets.SocketException (10060): A connection attempt failed
+   at B3D.Gateway.Dicom.StoreScu.Send()
+INF 2026.11.03 10:02:00 SCH - Scheduled retry of Accession=SYNEXAM01 to TESTPACS
+INF 2026.11.03 10:03:00 SCU - C-STORE to TESTPACS succeeded for Accession=SYNEXAM01 SeriesInstanceUID=2.25.700001.1
+INF 2026.11.03 10:03:10 SCU - C-STORE to TESTPACS succeeded for Accession=SYNEXAM01 SeriesInstanceUID=2.25.700001.2
+INF 2026.11.03 10:20:00 SPS - Study received from AE TESTMOD01 (192.0.2.10): Accession=SYNEXAM01 StudyInstanceUID=2.25.700001 SeriesInstanceUID=2.25.700001.3
+INF 2026.11.03 10:21:00 SCU - C-STORE to TESTPACS succeeded for Accession=SYNEXAM01 SeriesInstanceUID=2.25.700001.3
+INF 2026.11.03 10:30:00 DUP - Duplicate SeriesInstanceUID=2.25.700001.3 for Accession=SYNEXAM01 ignored

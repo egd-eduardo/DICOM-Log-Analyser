@@ -1,0 +1,5 @@
+2026-11-03 10:05:00.000 +00:00 [INF] DicomRouter.Forwarding.ForwardingService: Forwarding of study 2.25.700001 to destination TESTCLOUD started
+2026-11-03 10:05:30.000 +00:00 [ERR] DicomRouter.Forwarding.ForwardingService: Forwarding of study 2.25.700001 to destination TESTCLOUD failed
+System.Net.Http.HttpRequestException: Response status code does not indicate success: 503 (Service Unavailable).
+2026-11-03 10:06:00.000 +00:00 [WRN] DicomRouter.CloudGateway.CloudGatewayService: Retry 1 of 5 for study 2.25.700001 destination TESTCLOUD
+2026-11-03 10:07:00.000 +00:00 [INF] DicomRouter.Forwarding.ForwardingService: Forwarding of study 2.25.700001 to destination TESTCLOUD succeeded

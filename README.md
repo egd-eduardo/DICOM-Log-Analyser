@@ -30,6 +30,19 @@
   about success or failure), *errors were logged*, and *events found with no warning or error* (suggests, but does
   not prove, success). Coverage notes explain gaps: missing, disabled, unreachable or never-scanned sources, time
   ranges outside the indexed period, and logs whose time zone is unknown.
+* **Exam history** (plain-language interpretation of one exam): enter an accession number, patient ID or Study Instance
+  UID (or press *Exam history* on the Search tab). The summary states when the exam **entered the queue** (the first
+  time the study was received), whether it was **updated** (a new series arrived after the first receipt), the
+  **sends, resends** (repeated sends of the same series) and failures per destination with the last result, and when
+  the **final series** arrived, with no further arrivals after it. Key facts, a per-destination table, the series and
+  a timeline follow; every statement links to the log entries it is based on. Identifiers must match exactly
+  (`SYNEXAM01` does not pull in `SYNEXAM010`), and entries that only name the study's UID (such as router lines) are
+  joined automatically. The summary is available in **11 languages** chosen with flag buttons: English (default),
+  Spanish (Spain), Portuguese (Portugal), French, Lithuanian, Hungarian, Italian, Greek, Turkish, Croatian and German;
+  the choice is remembered by the browser. The interpretation is derived from the wording of the log entries
+  (receipt, send, failure, retry and duplicate messages), so it is an aid to reading the evidence, not a verdict; the
+  non-English texts were machine-written and should be reviewed by native speakers before clinical teams rely on them.
+  Administrators can export masked **message patterns** (Maintenance) to help tune the recognition.
 * Overview: event, error and warning counts, per-source coverage, errors per day, categories/components, most
   frequent error patterns (identifiers masked) and files with read or parse problems.
 * Secure import of log bundles (.zip, .gz, .log, .txt) from computers the analyser cannot reach.

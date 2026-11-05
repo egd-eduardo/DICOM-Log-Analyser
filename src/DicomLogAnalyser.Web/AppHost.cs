@@ -80,7 +80,9 @@ public static class AppHost
         builder.Services.AddSingleton(sources);
         builder.Services.AddSingleton(new AuditLog(db, time));
         builder.Services.AddSingleton(new Ingestor(db, sources, time));
-        builder.Services.AddSingleton(new SearchService(db));
+        var searchService = new SearchService(db);
+        builder.Services.AddSingleton(searchService);
+        builder.Services.AddSingleton(new Core.Exam.ExamHistoryService(searchService));
         builder.Services.AddSingleton(new OverviewService(db));
         builder.Services.AddSingleton(new PathValidator(paths, options.Mode == AppMode.Server ? options.SourceRoots : []));
         builder.Services.AddSingleton(new BundleImporter(paths, new BundleLimits { MaxUploadBytes = options.MaxUploadBytes }));

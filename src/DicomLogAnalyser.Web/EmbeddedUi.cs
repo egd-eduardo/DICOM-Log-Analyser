@@ -10,9 +10,26 @@ public static class EmbeddedUi
         ["/app.js"] = ("ui/app.js", "text/javascript; charset=utf-8"),
         ["/app.css"] = ("ui/app.css", "text/css; charset=utf-8"),
         ["/favicon.svg"] = ("ui/favicon.svg", "image/svg+xml"),
+        ["/exam-i18n.json"] = ("ui/exam-i18n.json", "application/json; charset=utf-8"),
     };
 
-    private static readonly Dictionary<string, byte[]> Cache = Load();
+    /// <summary>Flag images for the exam summary language buttons (ISO 3166 country codes).</summary>
+    private static readonly string[] Flags = ["gb", "es", "pt", "fr", "lt", "hu", "it", "gr", "tr", "hr", "de"];
+
+    static EmbeddedUi()
+    {
+        foreach (var flag in Flags)
+        {
+            Files[$"/flags/{flag}.svg"] = ($"ui/flags/{flag}.svg", "image/svg+xml");
+        }
+
+        Cache = Load();
+    }
+
+    /// <summary>The exact request paths of the embedded UI, used by the security middleware.</summary>
+    public static IReadOnlySet<string> Paths => Files.Keys.ToHashSet(StringComparer.Ordinal);
+
+    private static readonly Dictionary<string, byte[]> Cache;
 
     public static void Map(WebApplication app)
     {

@@ -24,7 +24,7 @@ public sealed class SecurityMiddleware(RequestDelegate next, AppRuntime runtime,
     public const string ServerCookie = "__Host-dla_session";
     internal const string SessionItem = "dla.session";
 
-    private static readonly HashSet<string> StaticPaths = new(StringComparer.Ordinal) { "/", "/index.html", "/app.js", "/app.css", "/favicon.svg" };
+    private static readonly IReadOnlySet<string> StaticPaths = EmbeddedUi.Paths;
 
     private string CookieName => runtime.Options.Mode == AppMode.Server ? ServerCookie : LocalCookie;
 

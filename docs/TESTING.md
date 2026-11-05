@@ -26,9 +26,9 @@ These checks were actually run; nothing below is assumed.
 
 | Check | Result |
 |---|---|
-| Secret/PHI scan | Passed (83 files). A planted file with a real-looking UID, a non-synthetic name, a public IP, a private-key header and a password was correctly rejected (5 findings). |
+| Secret/PHI scan | Passed (111 files on 2026-11-05; 83 files on 2026-11-04). A planted file with a real-looking UID, a non-synthetic name, a public IP, a private-key header and a password was correctly rejected (5 findings). |
 | Locked restore, format, build | Passed, no warnings |
-| Tests | 159 passed, 0 failed |
+| Tests | 173 passed, 0 failed (2026-11-05; 159 on 2026-11-04) |
 | Vulnerable packages (NuGet, transitive) | None reported |
 | npm audit (TypeScript) | 0 vulnerabilities |
 | UI type check | Passed, after fixing seven type errors it found |
@@ -43,6 +43,7 @@ These checks were actually run; nothing below is assumed.
 | File chooser (Chromium, folder with 8 daily files) | Latest 5 days pre-selected; ticking an older file showed "7 day(s) of 5 maximum" and disabled saving; a 4-day custom choice was saved and only its 4 files were searchable; a file added afterwards appeared as "new, not chosen" and in the overview gaps, while a deliberately unticked file stayed "not chosen" |
 | Live view (Chromium, a writer appending 3 to 4 lines per second with CRLF, accents and exception traces) | New lines appeared within about a second; errors red with traces; highlight marked the term; accented text correct; scrolling up stopped following; "only matching lines" filtered; after truncation the view restarted from the new end. A line written seconds earlier was found by Search without a manual scan (live indexing, 5 s) |
 | Fresh session | Tests: folders kept with time zone, choice reset to the newest 5 days and re-analysed; bundle files removed from disk; temporary files cleared; activity record kept (or cleared on request); an indexed identifier absent from the raw database and WAL bytes afterwards. Chromium: a 1-day choice became the newest 5 days after the fresh session, page results were cleared, source kept, `fresh_session` recorded |
+| Exam history (Chromium, synthetic exam fixtures, 2026-11-05) | `SYNEXAM01` from the Search tab: entered the queue 10:00:00 UTC, 1 update at 10:20:00, TESTCLOUD 2 sends, 1 resend, 1 failure, last success 10:07; TESTPACS 4 sends, 1 resend, 1 failure, last success 10:21; final series 10:20:00, last entry 10:30:00; 14 timeline entries, a timeline row opened the verified original lines. All 11 flags loaded; Portuguese and Greek re-rendered the summary instantly with local date formats; the Greek choice was remembered after reload; `SYNEXAM010` gave the "no entry mentions" explanation; no horizontal scroll at 390 px; no console errors |
 | Sources, folder browser, substring search (Chromium, no desktop dialog available, so the in-app browser was used) | Empty page showed "Your folders: none yet / Add your first folder"; Browse opened the folder browser, navigation into a sub-folder and "Use this folder" filled the path, suggested the label and validated it; after adding, "Add another folder" and "Your folders (2)"; the fragment `ACC000` found 5 events with the fragment highlighted; choosing category SCU in the list narrowed them to 2 |
 | Concurrency stress | Three rounds of scans (30 MB plus fixtures) while six threads searched, read the overview and sources, and new sources were added: 0 errors |
 
