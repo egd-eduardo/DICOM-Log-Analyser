@@ -133,6 +133,11 @@ and `start.command`; the Windows zip contains the program, the start script and 
 (start, 401 without session, loopback-only listener) and release-notes step passed when run by hand. The workflow
 itself runs only on GitHub after the first merge to `main`.
 
+First run ([Release run 1](https://github.com/egd-eduardo/DICOM-Log-Analyser/actions/runs/41943075726), after CI run 16
+on `main` passed): packages built and the smoke test passed, but the provenance attestation was refused by GitHub
+("Feature not available for user-owned private repositories"), so no release was published. The attestation step now
+runs only for public repositories; the release relies on the SHA-256 checksums otherwise.
+
 ## Not run here (needs the target environments)
 
 * Interactive use of the Windows and macOS packages by a person, and Windows SmartScreen / macOS Gatekeeper behaviour

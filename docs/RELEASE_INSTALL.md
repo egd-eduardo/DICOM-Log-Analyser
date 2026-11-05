@@ -29,7 +29,6 @@ No installation, no .NET and no administrator rights are needed.
 ## Check the download (optional)
 
 Compare the file's SHA-256 with the list below: `certutil -hashfile DicomLogAnalyser-win-x64.zip SHA256` (Windows) or
-`shasum -a 256 DicomLogAnalyser-osx-arm64.zip` (macOS). Provenance can be verified with
-`gh attestation verify <file> --repo egd-eduardo/DICOM-Log-Analyser`.
+`shasum -a 256 DicomLogAnalyser-osx-arm64.zip` (macOS).
 
 Full documentation: README.md in the zip.
