@@ -43,6 +43,10 @@ public sealed class ScanCoordinator(
     private sealed record FreshSessionWork(string Actor, FreshSessionOptions Options) : WorkItem(Actor);
 
     private long _generation;
+    private long _completed;
+
+    /// <summary>Number of work items finished (successfully or not); lets callers wait for queued work reliably.</summary>
+    public long Completed => Interlocked.Read(ref _completed);
 
     /// <summary>Changes at every fresh session; in-memory caches elsewhere (live watcher) reset when it changes.</summary>
     public long Generation => Interlocked.Read(ref _generation);
@@ -118,6 +122,7 @@ public sealed class ScanCoordinator(
             finally
             {
                 lock (_lock) _current = null;
+                Interlocked.Increment(ref _completed);
             }
         }
 

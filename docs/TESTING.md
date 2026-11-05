@@ -13,7 +13,7 @@ approved environment.
 | Locked restore | `dotnet restore --locked-mode` (lock files must match) |
 | Formatting and code style | `dotnet format --verify-no-changes` (`.editorconfig`) |
 | Build with analyzers | `dotnet build -c Release`, `AnalysisLevel=latest-recommended`, warnings as errors, NuGet Audit |
-| Unit and integration tests | xUnit, 139 tests (parsers, line reader, assembler, ingestion, rotation/truncation, search, query safety, bundle import attacks, path validation, configuration, HTTP security in both modes, end-to-end API, background queue failure isolation, viewer/administrator roles, 5-day file selection and schema upgrade, live view and live indexing, fresh session) |
+| Unit and integration tests | xUnit, 140 tests (parsers, line reader, assembler, ingestion, rotation/truncation, search, query safety, bundle import attacks, path validation, configuration, HTTP security in both modes, end-to-end API, background queue failure isolation, viewer/administrator roles, 5-day file selection and schema upgrade, live view and live indexing, fresh session) |
 | Dependency vulnerabilities | `dotnet list package --vulnerable --include-transitive`; `npm audit` for the UI type-check tool |
 | UI type check | TypeScript 7.0.2 `checkJs` over `Ui/app.js` |
 
@@ -28,7 +28,7 @@ These checks were actually run; nothing below is assumed.
 |---|---|
 | Secret/PHI scan | Passed (83 files). A planted file with a real-looking UID, a non-synthetic name, a public IP, a private-key header and a password was correctly rejected (5 findings). |
 | Locked restore, format, build | Passed, no warnings |
-| Tests | 139 passed, 0 failed |
+| Tests | 140 passed, 0 failed |
 | Vulnerable packages (NuGet, transitive) | None reported |
 | npm audit (TypeScript) | 0 vulnerabilities |
 | UI type check | Passed, after fixing seven type errors it found |
@@ -107,6 +107,21 @@ DICOM UIDs and must be confirmed by the owner.
 | [6](https://github.com/egd-eduardo/DICOM-Log-Analyser/actions/runs/41932728824) | `f03592f` | Time-zone pre-fill (119 tests): all four jobs passed (Linux with container and Compose checks; packages built, started and probed on Windows, macOS and Linux). |
 | [7](https://github.com/egd-eduardo/DICOM-Log-Analyser/actions/runs/41934095365) | `51365ac` | 5-day file limit per folder with file chooser, schema v2 (130 tests): all four jobs passed (Linux with container and Compose checks; packages built, started and probed on Windows, macOS and Linux). |
 | [8](https://github.com/egd-eduardo/DICOM-Log-Analyser/actions/runs/41934872734) | `7f2dedf` | Live view and automatic index updates (135 tests): all four jobs passed (Linux with container and Compose checks; packages built, started and probed on Windows, macOS and Linux). |
+| [9](https://github.com/egd-eduardo/DICOM-Log-Analyser/actions/runs/41936359410) | `1999579` | Failed on the Linux package job: 1 of 135 tests (`Growing_chosen_file_is_indexed_without_a_manual_scan`), see below. |
+| [10](https://github.com/egd-eduardo/DICOM-Log-Analyser/actions/runs/41937733187) | `c0aeac9` | Fresh session (139 tests): all four jobs passed. |
+| [11](https://github.com/egd-eduardo/DICOM-Log-Analyser/actions/runs/41938112575) | `c0aeac9` | Same commit as run 10, run for the pull request: failed on macOS with the same test. |
+
+### Intermittent test failure in runs 9 and 11 (fixed in the tests)
+
+The live-indexing test failed once on Linux and once on macOS, but passed on the same commit in run 10. The application
+behaved correctly: right after a queued item leaves the queue there is a brief moment before its status reads
+"running", and the test's "wait until idle" helper could pass during that moment while the start-up catch-up scan was
+still waiting. The watcher then correctly declined to queue a second scan for the same folder (the waiting scan reads
+the new lines), and the test's expectation of exactly one newly queued scan failed. Fix: the coordinator counts
+completed work items and the tests wait on that counter; two other test helpers with the same weak wait were changed
+too; a new deterministic test holds the queue with a gate and proves that a change arriving while a scan is waiting is
+not queued twice and is indexed by that scan. The race could not be reproduced locally (old and new tests each passed
+40 times under CPU load), so CI on the fixed tests is the confirmation.
 
 ## Not run here (needs the target environments)
 

@@ -56,12 +56,12 @@ public sealed class FreshSessionTests : IAsyncLifetime
 
     private async Task Run(Action enqueue)
     {
+        var target = Coordinator.Completed + 1;
         enqueue();
         for (var i = 0; i < 400; i++)
         {
             await Task.Delay(25);
-            var s = Coordinator.Status;
-            if (s.State == "idle" && s.Queued == 0 && s.FinishedUtc is not null) return;
+            if (Coordinator.Completed >= target && Coordinator.Status.Queued == 0) return;
         }
 
         Assert.Fail("The queue did not finish.");

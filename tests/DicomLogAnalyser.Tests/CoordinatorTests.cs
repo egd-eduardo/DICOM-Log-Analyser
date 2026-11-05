@@ -36,17 +36,22 @@ public sealed class CoordinatorTests : IAsyncLifetime
         return Sources.Add(new SourceDefinition { Label = name, Kind = SourceKinds.Folder, Path = dir, TimeZone = tz });
     }
 
+    /// <summary>Waits until every item queued so far has been processed (queue counter, not status timing).</summary>
     private async Task WaitIdle()
     {
-        for (var i = 0; i < 200; i++)
+        for (var i = 0; i < 400; i++)
         {
             var s = Coordinator.Status;
-            if (s.State == "idle" && s.Queued == 0 && s.FinishedUtc is not null) return;
+            if (s.Queued == 0 && s.State == "idle" && Coordinator.Completed >= _expected) return;
             await Task.Delay(25);
         }
 
         Assert.Fail("The background queue did not finish.");
     }
+
+    private long _expected;
+
+    private void Expect(int items) => _expected = Coordinator.Completed + items;
 
     [Fact]
     public async Task A_failing_source_is_recorded_as_failed_and_other_sources_are_still_scanned()
@@ -54,6 +59,7 @@ public sealed class CoordinatorTests : IAsyncLifetime
         var bad = AddSource("bad", "b3dweb-gateway/Gateway.log");
         var good = AddSource("good", "dicom-router/DicomRouter20261027.log");
         Coordinator.ScanOverride = (s, p, ct) => s.Id == bad ? throw new SqliteException("constraint failed", 19) : Ingestor.Scan(s, p, ct);
+        Expect(1);
         Assert.True(Coordinator.EnqueueScan("test", null));
         await WaitIdle();
 
@@ -74,6 +80,7 @@ public sealed class CoordinatorTests : IAsyncLifetime
         var id = AddSource("busy", "dicom-router/DicomRouter20261027.log");
         var calls = 0;
         Coordinator.ScanOverride = (s, p, ct) => ++calls == 1 ? throw new SqliteException("database is locked", 5) : Ingestor.Scan(s, p, ct);
+        Expect(1);
         Coordinator.EnqueueScan("test", [id]);
         await WaitIdle();
         Assert.Equal(2, calls);
@@ -90,6 +97,7 @@ public sealed class CoordinatorTests : IAsyncLifetime
             gate.Wait(TimeSpan.FromSeconds(10), ct);
             return Ingestor.Scan(Sources.Get(s.Id)!, p, ct);
         };
+        Expect(2);
         Coordinator.EnqueueScan("test", [id]);
         await Task.Delay(100);
         Assert.Equal("running", Coordinator.Status.State);

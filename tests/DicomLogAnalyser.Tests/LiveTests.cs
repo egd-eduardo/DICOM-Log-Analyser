@@ -135,20 +135,57 @@ public sealed class LiveHostTests : IAsyncLifetime
     {
         var (id, dir) = AddFolder("live.log");
         var coordinator = _app.Services.GetRequiredService<ScanCoordinator>();
-        coordinator.EnqueueScan("test", [id]);
-        await WaitFor(() => Count() == 1);
         var watcher = _app.Services.GetRequiredService<LiveIndexer>();
-        watcher.CheckOnce();
-        await WaitIdle(coordinator);
+        var target = coordinator.Completed + 1;
+        coordinator.EnqueueScan("test", [id]);
+        await WaitFor(() => coordinator.Completed >= target && Count() == 1);
 
+        // First check after start-up catches up (one quiet live scan); wait until it has run.
+        target = coordinator.Completed + watcher.CheckOnce();
+        await WaitFor(() => coordinator.Completed >= target && coordinator.Status.Queued == 0);
+
+        // New lines are picked up without a manual scan. (If a live scan for this folder were still waiting, the
+        // watcher would rightly not queue another one; that queued scan reads the new lines.)
         File.AppendAllText(Path.Combine(dir, "live.log"), "ERROR 2026.11.03 10:00:05 SCU - C-STORE failed SYNACC0042\n");
         Assert.Equal(1, watcher.CheckOnce());
         await WaitFor(() => Count() == 2);
+        await WaitFor(() => coordinator.Status.Queued == 0 && coordinator.Status.State == "idle");
         Assert.Equal(0, watcher.CheckOnce());
         var hit = _app.Services.GetRequiredService<SearchService>().Search(new SearchRequest { Text = "SYNACC0042" });
         Assert.Equal(1, hit.MatchCount);
         // Live updates do not flood the activity record.
         Assert.DoesNotContain(_app.Services.GetRequiredService<DicomLogAnalyser.Core.Diagnostics.AuditLog>().Recent(50), a => a.Actor == "live");
+    }
+
+    [Fact]
+    public async Task A_change_while_a_scan_is_waiting_is_covered_by_that_scan()
+    {
+        var (id, dir) = AddFolder("live.log");
+        var coordinator = _app.Services.GetRequiredService<ScanCoordinator>();
+        var watcher = _app.Services.GetRequiredService<LiveIndexer>();
+        var ingestor = _app.Services.GetRequiredService<Ingestor>();
+        using var gate = new ManualResetEventSlim();
+        coordinator.ScanOverride = (s, p, ct) =>
+        {
+            gate.Wait(TimeSpan.FromSeconds(10), ct);
+            return ingestor.Scan(_app.Services.GetRequiredService<SourceRepository>().Get(s.Id)!, p, ct);
+        };
+
+        // A manual scan is running (held at the gate); the watcher queues one live scan behind it.
+        var target = coordinator.Completed + 2;
+        coordinator.EnqueueScan("test", [id]);
+        _app.Services.GetRequiredService<SourceRepository>().SetSelection(id, ["live.log"], ["live.log"]);
+        Assert.Equal(1, watcher.CheckOnce());
+
+        // The file grows while that live scan is still waiting: no second scan is queued...
+        File.AppendAllText(Path.Combine(dir, "live.log"), "ERROR 2026.11.03 10:00:05 SCU - C-STORE failed SYNACC0099\n");
+        Assert.Equal(0, watcher.CheckOnce());
+
+        // ...and the waiting scan, which reads the file when it runs, indexes the new line.
+        gate.Set();
+        await WaitFor(() => coordinator.Completed >= target);
+        Assert.Equal(2, Count());
+        Assert.Equal(1, _app.Services.GetRequiredService<SearchService>().Search(new SearchRequest { Text = "SYNACC0099" }).MatchCount);
     }
 
     private long Count()
@@ -163,8 +200,4 @@ public sealed class LiveHostTests : IAsyncLifetime
         Assert.True(condition());
     }
 
-    private static async Task WaitIdle(ScanCoordinator c)
-    {
-        for (var i = 0; i < 200 && (c.Status.State != "idle" || c.Status.Queued > 0); i++) await Task.Delay(25);
-    }
 }
