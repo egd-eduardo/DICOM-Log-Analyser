@@ -237,6 +237,7 @@ const loaders = /** @type {Record<string, () => Promise<void>>} */ ({
   search: async () => { await Promise.all([loadSources(), loadCategories()]); $('q').focus(); },
   live: openLive,
   exam: async () => { await loadExamLanguages(); $('ex-q').focus(); },
+  worklist: loadWorklist,
   sources: loadSources,
   import: loadSources,
   maintenance: loadMaintenance,
@@ -247,6 +248,7 @@ function showTab(name) {
   for (const b of document.querySelectorAll('#tabs button')) b.classList.toggle('active', /** @type {HTMLElement} */ (b).dataset.tab === name);
   for (const p of document.querySelectorAll('.panel')) p.classList.toggle('hidden', p.id !== 'tab-' + name);
   if (name !== 'live') stopLive();
+  if (name !== 'worklist') stopWorklist();
   loaders[name]?.().catch((e) => notify(e.message));
 }
 
@@ -1136,6 +1138,77 @@ function examTable(heads, rows, cells, openId) {
   return wrap;
 }
 
+// ---------- Modality worklist ----------
+
+const worklist = { timer: 0, busy: false };
+
+function stopWorklist() { window.clearTimeout(worklist.timer); worklist.timer = 0; }
+
+function scheduleWorklist() {
+  stopWorklist();
+  if ($('wl-live').checked && !$('tab-worklist').classList.contains('hidden')) worklist.timer = window.setTimeout(() => { loadWorklist().catch((e) => notify(e.message)); }, 10000);
+}
+
+/** @param {number} ts @param {boolean} utcKnown */
+const wlTime = (ts, utcKnown) => utc(ts).slice(0, 19) + (utcKnown ? ' UTC' : ' local');
+
+/** @param {Record<string, number>} d */
+function tally(d) {
+  const entries = Object.entries(d || {});
+  return entries.length === 0 ? '' : entries.sort((a, b) => b[1] - a[1]).map(([k, v]) => `${k} (${num(v)})`).join(', ');
+}
+
+async function loadWorklist() {
+  if (worklist.busy) return;
+  worklist.busy = true;
+  try {
+    const r = await api('/api/worklist?hours=' + encodeURIComponent($('wl-hours').value));
+    renderWorklist(r);
+  } finally {
+    worklist.busy = false;
+    scheduleWorklist();
+  }
+}
+
+/** @param {any} r */
+function renderWorklist(r) {
+  const out = $('wl-out');
+  out.replaceChildren();
+  if (r.toTs === null) {
+    $('wl-status').textContent = '';
+    out.append(el('p', 'notice info', 'No VIDAcare Connector log is indexed yet. Add the folder VIDAcare\\Connector\\logs under Sources; it is recognised automatically.'));
+    return;
+  }
+  const assoc = r.equipment.reduce((n, e) => n + e.associations, 0);
+  $('wl-status').textContent = `${r.equipment.length} AE title(s), ${num(assoc)} association(s)` + (r.fromTs !== null ? ` from ${wlTime(r.fromTs, r.utcKnown)}` : '') + ` to ${wlTime(r.toTs, r.utcKnown)} (latest indexed entry). Updated ${new Date().toLocaleTimeString()}.` + (r.truncated ? ' Only the first part of the period was analysed; choose a shorter period.' : '');
+
+  out.append(el('h2', '', 'Findings'));
+  if (r.findings.length === 0) out.append(el('p', 'ok-text', 'No inconsistency found in this period.'));
+  for (const f of r.findings) {
+    const box = el('div', 'finding finding-' + f.severity);
+    box.append(el('strong', '', f.title), el('div', 'small', f.detail));
+    out.append(box);
+  }
+
+  out.append(el('h2', '', 'Equipment (calling AE titles)'));
+  const heads = ['AE title', 'Address', 'Software', 'Called AE', 'Associations', 'Echo', 'Queries', 'Items sent', 'Empty answers', 'Failed', 'Query modality', 'Query station AE', 'Items: station AE', 'Last seen'];
+  out.append(examTable(heads, r.equipment, (/** @type {any} */ e) => [
+    el('strong', '', e.callingAe), e.addresses.join(', '), e.implementations.join(', '), e.calledAes.join(', '),
+    num(e.associations), num(e.echoes), num(e.queries), num(e.items),
+    e.emptyAnswers > 0 && e.items === 0 ? el('span', 'warn-text', num(e.emptyAnswers)) : num(e.emptyAnswers),
+    e.failures > 0 ? el('span', 'err-text', num(e.failures)) : '0',
+    tally(e.queryModalities), tally(e.queryStationAes), tally(e.itemStationAes), wlTime(e.lastTs, r.utcKnown),
+  ], (/** @type {any} */ e) => e.lastEventId));
+
+  out.append(el('h2', '', 'Recent associations'));
+  out.append(examTable(['Time', 'Calling AE', 'Address', 'Called AE', 'Echo', 'Queries', 'Modality', 'Station AE', 'Date', 'Items', 'Outcome'], r.recent, (/** @type {any} */ a) => [
+    wlTime(a.startTs, a.utcKnown), a.callingAe || '', a.address || '', a.calledAe || '', num(a.echoes), num(a.queries),
+    a.queries ? (a.queryModality || '(any)') : '', a.queries ? (a.queryStationAe || '(any)') : '', a.queryDate || '',
+    a.queries ? (a.items === 0 ? el('span', 'warn-text', '0') : num(a.items)) : '',
+    a.outcome === 'released' && (!a.finalStatus || a.finalStatus === '0000') ? a.outcome : el('span', 'err-text', a.outcome + (a.finalStatus && a.finalStatus !== '0000' ? ' (status ' + a.finalStatus + 'H)' : '')),
+  ], (/** @type {any} */ a) => a.eventId));
+}
+
 // ---------- Start ----------
 
 async function start() {
@@ -1144,6 +1217,9 @@ async function start() {
   $('ov-refresh').addEventListener('click', () => loadOverview().catch((e) => notify(e.message)));
   $('search-form').addEventListener('submit', (/** @type {Event} */ ev) => { ev.preventDefault(); runSearch(false).catch((e) => notify(e.message)); });
   $('more').addEventListener('click', () => runSearch(true).catch((e) => notify(e.message)));
+  $('wl-hours').addEventListener('change', () => loadWorklist().catch((e) => notify(e.message)));
+  $('wl-refresh').addEventListener('click', () => loadWorklist().catch((e) => notify(e.message)));
+  $('wl-live').addEventListener('change', scheduleWorklist);
   $('exam-form').addEventListener('submit', (/** @type {Event} */ ev) => { ev.preventDefault(); runExam(undefined).catch((e) => notify(e.message)); });
   $('q-exam').addEventListener('click', () => { const q = $('q').value.trim(); showTab('exam'); if (q) runExam(q).catch((e) => notify(e.message)); });
   $('d-close').addEventListener('click', () => $('detail').close());

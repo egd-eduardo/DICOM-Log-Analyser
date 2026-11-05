@@ -5,7 +5,7 @@ public static class FormatRegistry
 {
     public const string Auto = "auto";
 
-    public static IReadOnlyList<ILogFormat> All { get; } = [new B3dWebGatewayFormat(), new DicomRouterFormat()];
+    public static IReadOnlyList<ILogFormat> All { get; } = [new B3dWebGatewayFormat(), new DicomRouterFormat(), new VidacareConnectorFormat()];
 
     public static ILogFormat? Find(string? id) => All.FirstOrDefault(f => string.Equals(f.Id, id, StringComparison.Ordinal));
 

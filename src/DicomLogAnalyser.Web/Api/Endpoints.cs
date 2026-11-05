@@ -79,6 +79,28 @@ public static class Endpoints
             return Results.Json(exams.Build(q, ids.Count > 0 ? ids : null));
         });
 
+        // Modality worklist (VIDAcare Connector logs): equipment, queries, items sent and AE title inconsistencies.
+        api.MapGet("/worklist", (HttpContext ctx, Core.Worklist.WorklistAnalysis worklist) =>
+        {
+            var hoursText = ctx.Request.Query["hours"].ToString();
+            int? hours = 24;
+            if (hoursText == "all") hours = null;
+            else if (hoursText.Length > 0)
+            {
+                if (!int.TryParse(hoursText, NumberStyles.None, CultureInfo.InvariantCulture, out var h) || h is < 1 or > 24 * 31) return Bad("Invalid period.");
+                hours = h;
+            }
+
+            var ids = new List<long>();
+            foreach (var part in ctx.Request.Query["sources"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!long.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out var id) || ids.Count >= 100) return Bad("Invalid source list.");
+                ids.Add(id);
+            }
+
+            return Results.Json(worklist.Analyse(ids.Count > 0 ? ids : null, hours));
+        });
+
         api.MapGet("/categories", (OverviewService overview) => Results.Json(overview.Categories()));
 
         // Time-zone names this server accepts, its own time zone, and whether the browser's zone is usable here.

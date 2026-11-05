@@ -1,0 +1,436 @@
+﻿2026-11-05 09:00:00,000 [RIS:12] INFO  Association - Association(101) accepted 192.0.2.21:50101 | 6 915 744
+2026-11-05 09:00:00,000 [RIS:12] DEBUG Association - Association(101) enter state: Sta2 | 6 923 936
+2026-11-05 09:00:00,000 [RIS:12] DEBUG NetworkConnection - Wait for connections on 0.0.0.0:1040 | 6 932 128
+2026-11-05 09:00:00,007 [23:23] DEBUG Association - Association(101): start ARTIM 5000ms | 6 940 320
+2026-11-05 09:00:00,007 [23:23] INFO  Association - Association(101): A-ASSOCIATE-RQ TESTMR1 >> RIS | 6 948 512
+2026-11-05 09:00:00,007 [23:23] DEBUG Association - A-ASSOCIATE-RQ[ | 6 956 704
+  calledAET = RIS
+  callingAET = TESTMR1
+  implClassUID = 2.25.4242
+  implVersionName = SYNTHETIC_MR_1
+  maxPDULength = 16384
+  PresentationContext[id=1, as=1.2.840.10008.5.1.4.31 - Modality Worklist Information Model - FIND
+    ts = 1.2.840.10008.1.2 - Implicit VR Little Endian]
+] | 1 6956704 0
+2026-11-05 09:00:00,007 [23:23] INFO  PDUEncoder - TESTMR1(101): A-ASSOCIATE-AC RIS >> TESTMR1 | 6 964 896
+2026-11-05 09:00:00,014 [23:23] DEBUG PDUDecoder - TESTMR1(101) >> 1:C-FIND-RQ [pcid=1, prior=0, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND, ts=1.2.840.10008.1.2/Implicit VR Little Endian] | 6 973 088
+2026-11-05 09:00:00,014 [23:23] DEBUG DicomServiceRegistry - Dataset: | 6 981 280
+(0008,0005) CS #0 [] Specific Character Set
+(0008,0050) SH #0 [] Accession Number
+(0010,0010) PN #0 [] Patient’s Name
+(0010,0020) LO #0 [] Patient ID
+(0040,0100) SQ #0 [] Scheduled Procedure Step Sequence
+>(0008,0060) CS #2 [MR] Modality
+>(0040,0001) AE #0 [] Scheduled Station AE Title
+>(0040,0002) DA #8 [20261105] Scheduled Procedure Step Start Date
+>(0040,0010) SH #0 [] Scheduled Station Name
+2026-11-05 09:00:00,014 [23:23] INFO  DicomWorklist - Fetching data... | 6 989 472
+2026-11-05 09:00:00,014 [23:23] INFO  ConnectorBase - Start invoke process lf00000065 | 6 997 664
+2026-11-05 09:00:00,014 [23:23] INFO  ConnectorBase - Finish invoke process lf00000065 in 94ms | 7 005 856
+2026-11-05 09:00:00,014 [23:23] INFO  DicomWorklist - Loading data for TESTMR1 | 7 014 048
+2026-11-05 09:00:00,014 [23:23] DEBUG DicomWorklist - Acts - [2] | 7 022 240
+2026-11-05 09:00:00,021 [TESTMR1:1] DEBUG PDUEncoder - TESTMR1(101) << 1:C-FIND-RSP [pcid=1, status=FF00H, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND, ts=1.2.840.10008.1.2/Implicit VR Little Endian] | 7 030 432
+2026-11-05 09:00:00,021 [TESTMR1:1] DEBUG PDUEncoder - Dataset: | 7 038 624
+(0008,0005) CS #10 [ISO_IR 100] Specific Character Set
+(0008,0050) LO #10 [SYNACC0001] Accession Number
+(0010,0010) PN #18 [SYNTHETIC^PATIENT1] Patient’s Name
+(0010,0020) LO #10 [SYNPID0001] Patient ID
+(0020,000D) UI #11 [2.25.810001] Study Instance UID
+(0040,0100) SQ #0 [] Scheduled Procedure Step Sequence
+>(0008,0060) CS #2 [MR] Modality
+>(0040,0001) AE #7 [TESTMR1] Scheduled Station AE Title
+>(0040,0002) DA #8 [20261105] Scheduled Procedure Step Start Date
+2026-11-05 09:00:00,028 [TESTMR1:1] DEBUG PDUEncoder - TESTMR1(101) << 1:C-FIND-RSP [pcid=1, status=FF00H, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND, ts=1.2.840.10008.1.2/Implicit VR Little Endian] | 7 046 816
+2026-11-05 09:00:00,028 [TESTMR1:1] DEBUG PDUEncoder - Dataset: | 7 055 008
+(0008,0005) CS #10 [ISO_IR 100] Specific Character Set
+(0008,0050) LO #10 [SYNACC0002] Accession Number
+(0010,0010) PN #18 [SYNTHETIC^PATIENT2] Patient’s Name
+(0010,0020) LO #10 [SYNPID0002] Patient ID
+(0020,000D) UI #11 [2.25.810002] Study Instance UID
+(0040,0100) SQ #0 [] Scheduled Procedure Step Sequence
+>(0008,0060) CS #2 [MR] Modality
+>(0040,0001) AE #7 [TESTMR1] Scheduled Station AE Title
+>(0040,0002) DA #8 [20261105] Scheduled Procedure Step Start Date
+2026-11-05 09:00:00,028 [TESTMR1:1] DEBUG PDUEncoder - TESTMR1(101) << 1:C-FIND-RSP [pcid=1, status=0H, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND] | 7 063 200
+2026-11-05 09:00:00,035 [23:23] INFO  Association - TESTMR1(101): A-RELEASE-RQ TESTMR1 << RIS | 7 071 392
+2026-11-05 09:00:00,035 [23:23] DEBUG Association - TESTMR1(101) enter state: Sta8 | 7 079 584
+2026-11-05 09:00:00,035 [23:23] INFO  PDUEncoder - TESTMR1(101): A-RELEASE-RP RIS >> TESTMR1 | 7 087 776
+2026-11-05 09:00:00,035 [23:23] DEBUG Association - TESTMR1(101): close socket | 7 095 968
+2026-11-05 09:01:00,000 [RIS:12] INFO  Association - Association(102) accepted 192.0.2.22:50102 | 7 104 160
+2026-11-05 09:01:00,000 [RIS:12] DEBUG Association - Association(102) enter state: Sta2 | 7 112 352
+2026-11-05 09:01:00,000 [RIS:12] DEBUG NetworkConnection - Wait for connections on 0.0.0.0:1040 | 7 120 544
+2026-11-05 09:01:00,007 [24:24] DEBUG Association - Association(102): start ARTIM 5000ms | 7 128 736
+2026-11-05 09:01:00,007 [24:24] INFO  Association - Association(102): A-ASSOCIATE-RQ AE_TESTMG >> RIS | 7 136 928
+2026-11-05 09:01:00,007 [24:24] DEBUG Association - A-ASSOCIATE-RQ[ | 7 145 120
+  calledAET = RIS
+  callingAET = AE_TESTMG
+  implClassUID = 2.25.4242
+  implVersionName = GE_TestMammo_1
+  maxPDULength = 16384
+  PresentationContext[id=1, as=1.2.840.10008.5.1.4.31 - Modality Worklist Information Model - FIND
+    ts = 1.2.840.10008.1.2 - Implicit VR Little Endian]
+] | 1 7145120 0
+2026-11-05 09:01:00,007 [24:24] INFO  PDUEncoder - AE_TESTMG(102): A-ASSOCIATE-AC RIS >> AE_TESTMG | 7 153 312
+2026-11-05 09:01:00,014 [24:24] DEBUG PDUDecoder - AE_TESTMG(102) >> 1:C-FIND-RQ [pcid=1, prior=0, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND, ts=1.2.840.10008.1.2/Implicit VR Little Endian] | 7 161 504
+2026-11-05 09:01:00,014 [24:24] DEBUG DicomServiceRegistry - Dataset: | 7 169 696
+(0008,0005) CS #0 [] Specific Character Set
+(0008,0050) SH #0 [] Accession Number
+(0010,0010) PN #0 [] Patient’s Name
+(0010,0020) LO #0 [] Patient ID
+(0040,0100) SQ #0 [] Scheduled Procedure Step Sequence
+>(0008,0060) CS #0 [] Modality
+>(0040,0001) AE #0 [] Scheduled Station AE Title
+>(0040,0002) DA #0 [] Scheduled Procedure Step Start Date
+>(0040,0010) SH #0 [] Scheduled Station Name
+2026-11-05 09:01:00,014 [24:24] INFO  DicomWorklist - Fetching data... | 7 177 888
+2026-11-05 09:01:00,014 [24:24] INFO  ConnectorBase - Start invoke process lf00000066 | 7 186 080
+2026-11-05 09:01:00,014 [24:24] INFO  ConnectorBase - Finish invoke process lf00000066 in 94ms | 7 194 272
+2026-11-05 09:01:00,014 [24:24] INFO  DicomWorklist - Loading data for AE_TESTMG | 7 202 464
+2026-11-05 09:01:00,014 [24:24] DEBUG DicomWorklist - Acts - [0] | 7 210 656
+2026-11-05 09:01:00,014 [AE_TESTMG:1] DEBUG PDUEncoder - AE_TESTMG(102) << 1:C-FIND-RSP [pcid=1, status=0H, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND] | 7 218 848
+2026-11-05 09:01:00,021 [24:24] INFO  Association - AE_TESTMG(102): A-RELEASE-RQ AE_TESTMG << RIS | 7 227 040
+2026-11-05 09:01:00,021 [24:24] DEBUG Association - AE_TESTMG(102) enter state: Sta8 | 7 235 232
+2026-11-05 09:01:00,021 [24:24] INFO  PDUEncoder - AE_TESTMG(102): A-RELEASE-RP RIS >> AE_TESTMG | 7 243 424
+2026-11-05 09:01:00,021 [24:24] DEBUG Association - AE_TESTMG(102): close socket | 7 251 616
+2026-11-05 09:02:00,000 [RIS:12] INFO  Association - Association(103) accepted 192.0.2.23:50103 | 7 259 808
+2026-11-05 09:02:00,000 [RIS:12] DEBUG Association - Association(103) enter state: Sta2 | 7 268 000
+2026-11-05 09:02:00,000 [RIS:12] DEBUG NetworkConnection - Wait for connections on 0.0.0.0:1040 | 7 276 192
+2026-11-05 09:02:00,007 [25:25] DEBUG Association - Association(103): start ARTIM 5000ms | 7 284 384
+2026-11-05 09:02:00,007 [25:25] INFO  Association - Association(103): A-ASSOCIATE-RQ PHILUS1 >> RIS | 7 292 576
+2026-11-05 09:02:00,007 [25:25] DEBUG Association - A-ASSOCIATE-RQ[ | 7 300 768
+  calledAET = RIS
+  callingAET = PHILUS1
+  implClassUID = 2.25.4242
+  implVersionName = LOGIQTest
+  maxPDULength = 16384
+  PresentationContext[id=1, as=1.2.840.10008.5.1.4.31 - Modality Worklist Information Model - FIND
+    ts = 1.2.840.10008.1.2 - Implicit VR Little Endian]
+] | 1 7300768 0
+2026-11-05 09:02:00,007 [25:25] INFO  PDUEncoder - PHILUS1(103): A-ASSOCIATE-AC RIS >> PHILUS1 | 7 308 960
+2026-11-05 09:02:00,007 [25:25] DEBUG PDUDecoder - PHILUS1(103) >> 1:C-ECHO-RQ [pcid=1, cuid=1.2.840.10008.1.1/Verification SOP Class] | 7 317 152
+2026-11-05 09:02:00,007 [PHILUS1:1] DEBUG PDUEncoder - PHILUS1(103) << 1:C-ECHO-RSP [pcid=1, status=0H, cuid=1.2.840.10008.1.1/Verification SOP Class] | 7 325 344
+2026-11-05 09:02:00,014 [25:25] INFO  Association - PHILUS1(103): A-RELEASE-RQ PHILUS1 << RIS | 7 333 536
+2026-11-05 09:02:00,014 [25:25] DEBUG Association - PHILUS1(103) enter state: Sta8 | 7 341 728
+2026-11-05 09:02:00,014 [25:25] INFO  PDUEncoder - PHILUS1(103): A-RELEASE-RP RIS >> PHILUS1 | 7 349 920
+2026-11-05 09:02:00,014 [25:25] DEBUG Association - PHILUS1(103): close socket | 7 358 112
+2026-11-05 09:03:00,000 [RIS:12] INFO  Association - Association(104) accepted 192.0.2.23:50104 | 7 366 304
+2026-11-05 09:03:00,000 [RIS:12] DEBUG Association - Association(104) enter state: Sta2 | 7 374 496
+2026-11-05 09:03:00,000 [RIS:12] DEBUG NetworkConnection - Wait for connections on 0.0.0.0:1040 | 7 382 688
+2026-11-05 09:03:00,007 [26:26] DEBUG Association - Association(104): start ARTIM 5000ms | 7 390 880
+2026-11-05 09:03:00,007 [26:26] INFO  Association - Association(104): A-ASSOCIATE-RQ PHILUS1 >> RIS | 7 399 072
+2026-11-05 09:03:00,007 [26:26] DEBUG Association - A-ASSOCIATE-RQ[ | 7 407 264
+  calledAET = RIS
+  callingAET = PHILUS1
+  implClassUID = 2.25.4242
+  implVersionName = LOGIQTest
+  maxPDULength = 16384
+  PresentationContext[id=1, as=1.2.840.10008.5.1.4.31 - Modality Worklist Information Model - FIND
+    ts = 1.2.840.10008.1.2 - Implicit VR Little Endian]
+] | 1 7407264 0
+2026-11-05 09:03:00,007 [26:26] INFO  PDUEncoder - PHILUS1(104): A-ASSOCIATE-AC RIS >> PHILUS1 | 7 415 456
+2026-11-05 09:03:00,014 [26:26] DEBUG PDUDecoder - PHILUS1(104) >> 1:C-FIND-RQ [pcid=1, prior=0, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND, ts=1.2.840.10008.1.2/Implicit VR Little Endian] | 7 423 648
+2026-11-05 09:03:00,014 [26:26] DEBUG DicomServiceRegistry - Dataset: | 7 431 840
+(0008,0005) CS #0 [] Specific Character Set
+(0008,0050) SH #0 [] Accession Number
+(0010,0010) PN #0 [] Patient’s Name
+(0010,0020) LO #0 [] Patient ID
+(0040,0100) SQ #0 [] Scheduled Procedure Step Sequence
+>(0008,0060) CS #2 [US] Modality
+>(0040,0001) AE #0 [] Scheduled Station AE Title
+>(0040,0002) DA #8 [20261105] Scheduled Procedure Step Start Date
+>(0040,0010) SH #0 [] Scheduled Station Name
+2026-11-05 09:03:00,014 [26:26] INFO  DicomWorklist - Fetching data... | 7 440 032
+2026-11-05 09:03:00,014 [26:26] INFO  ConnectorBase - Start invoke process lf00000068 | 7 448 224
+2026-11-05 09:03:00,014 [26:26] INFO  ConnectorBase - Finish invoke process lf00000068 in 94ms | 7 456 416
+2026-11-05 09:03:00,014 [26:26] INFO  DicomWorklist - Loading data for PHILUS1 | 7 464 608
+2026-11-05 09:03:00,014 [26:26] DEBUG DicomWorklist - Acts - [1] | 7 472 800
+2026-11-05 09:03:00,021 [PHILUS1:1] DEBUG PDUEncoder - PHILUS1(104) << 1:C-FIND-RSP [pcid=1, status=FF00H, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND, ts=1.2.840.10008.1.2/Implicit VR Little Endian] | 7 480 992
+2026-11-05 09:03:00,021 [PHILUS1:1] DEBUG PDUEncoder - Dataset: | 7 489 184
+(0008,0005) CS #10 [ISO_IR 100] Specific Character Set
+(0008,0050) LO #10 [SYNACC0003] Accession Number
+(0010,0010) PN #18 [SYNTHETIC^PATIENT3] Patient’s Name
+(0010,0020) LO #10 [SYNPID0003] Patient ID
+(0020,000D) UI #11 [2.25.810003] Study Instance UID
+(0040,0100) SQ #0 [] Scheduled Procedure Step Sequence
+>(0008,0060) CS #2 [US] Modality
+>(0040,0001) AE #7 [PHILUS1] Scheduled Station AE Title
+>(0040,0002) DA #8 [20261105] Scheduled Procedure Step Start Date
+2026-11-05 09:03:00,021 [PHILUS1:1] DEBUG PDUEncoder - PHILUS1(104) << 1:C-FIND-RSP [pcid=1, status=0H, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND] | 7 497 376
+2026-11-05 09:03:00,028 [26:26] INFO  Association - PHILUS1(104): A-RELEASE-RQ PHILUS1 << RIS | 7 505 568
+2026-11-05 09:03:00,028 [26:26] DEBUG Association - PHILUS1(104) enter state: Sta8 | 7 513 760
+2026-11-05 09:03:00,028 [26:26] INFO  PDUEncoder - PHILUS1(104): A-RELEASE-RP RIS >> PHILUS1 | 7 521 952
+2026-11-05 09:03:00,028 [26:26] DEBUG Association - PHILUS1(104): close socket | 7 530 144
+2026-11-05 09:04:00,000 [RIS:12] INFO  Association - Association(105) accepted 192.0.2.24:50105 | 7 538 336
+2026-11-05 09:04:00,000 [RIS:12] DEBUG Association - Association(105) enter state: Sta2 | 7 546 528
+2026-11-05 09:04:00,000 [RIS:12] DEBUG NetworkConnection - Wait for connections on 0.0.0.0:1040 | 7 554 720
+2026-11-05 09:04:00,007 [20:20] DEBUG Association - Association(105): start ARTIM 5000ms | 7 562 912
+2026-11-05 09:04:00,007 [20:20] INFO  Association - Association(105): A-ASSOCIATE-RQ TESTCT1 >> RIS | 7 571 104
+2026-11-05 09:04:00,007 [20:20] DEBUG Association - A-ASSOCIATE-RQ[ | 7 579 296
+  calledAET = RIS
+  callingAET = TESTCT1
+  implClassUID = 2.25.4242
+  implVersionName = SYNTHETIC_CT_1
+  maxPDULength = 16384
+  PresentationContext[id=1, as=1.2.840.10008.5.1.4.31 - Modality Worklist Information Model - FIND
+    ts = 1.2.840.10008.1.2 - Implicit VR Little Endian]
+] | 1 7579296 0
+2026-11-05 09:04:00,007 [20:20] INFO  PDUEncoder - TESTCT1(105): A-ASSOCIATE-AC RIS >> TESTCT1 | 7 587 488
+2026-11-05 09:04:00,014 [20:20] DEBUG PDUDecoder - TESTCT1(105) >> 1:C-FIND-RQ [pcid=1, prior=0, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND, ts=1.2.840.10008.1.2/Implicit VR Little Endian] | 7 595 680
+2026-11-05 09:04:00,014 [20:20] DEBUG DicomServiceRegistry - Dataset: | 7 603 872
+(0008,0005) CS #0 [] Specific Character Set
+(0008,0050) SH #0 [] Accession Number
+(0010,0010) PN #0 [] Patient’s Name
+(0010,0020) LO #0 [] Patient ID
+(0040,0100) SQ #0 [] Scheduled Procedure Step Sequence
+>(0008,0060) CS #2 [CT] Modality
+>(0040,0001) AE #7 [TESTCT1] Scheduled Station AE Title
+>(0040,0002) DA #8 [20261105] Scheduled Procedure Step Start Date
+>(0040,0010) SH #0 [] Scheduled Station Name
+2026-11-05 09:04:00,014 [20:20] INFO  DicomWorklist - Fetching data... | 7 612 064
+2026-11-05 09:04:00,014 [20:20] INFO  ConnectorBase - Start invoke process lf00000069 | 7 620 256
+2026-11-05 09:04:00,014 [20:20] INFO  ConnectorBase - Finish invoke process lf00000069 in 94ms | 7 628 448
+2026-11-05 09:04:00,014 [20:20] INFO  DicomWorklist - Loading data for TESTCT1 | 7 636 640
+2026-11-05 09:04:00,014 [20:20] DEBUG DicomWorklist - Acts - [1] | 7 644 832
+2026-11-05 09:04:00,021 [TESTCT1:1] DEBUG PDUEncoder - TESTCT1(105) << 1:C-FIND-RSP [pcid=1, status=FF00H, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND, ts=1.2.840.10008.1.2/Implicit VR Little Endian] | 7 653 024
+2026-11-05 09:04:00,021 [TESTCT1:1] DEBUG PDUEncoder - Dataset: | 7 661 216
+(0008,0005) CS #10 [ISO_IR 100] Specific Character Set
+(0008,0050) LO #10 [SYNACC0004] Accession Number
+(0010,0010) PN #18 [SYNTHETIC^PATIENT4] Patient’s Name
+(0010,0020) LO #10 [SYNPID0004] Patient ID
+(0020,000D) UI #11 [2.25.810004] Study Instance UID
+(0040,0100) SQ #0 [] Scheduled Procedure Step Sequence
+>(0008,0060) CS #2 [CT] Modality
+>(0040,0001) AE #7 [TESTCT1] Scheduled Station AE Title
+>(0040,0002) DA #8 [20261105] Scheduled Procedure Step Start Date
+2026-11-05 09:04:00,021 [TESTCT1:1] DEBUG PDUEncoder - TESTCT1(105) << 1:C-FIND-RSP [pcid=1, status=0H, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND] | 7 669 408
+2026-11-05 09:04:00,028 [20:20] INFO  Association - TESTCT1(105): A-RELEASE-RQ TESTCT1 << RIS | 7 677 600
+2026-11-05 09:04:00,028 [20:20] DEBUG Association - TESTCT1(105) enter state: Sta8 | 7 685 792
+2026-11-05 09:04:00,028 [20:20] INFO  PDUEncoder - TESTCT1(105): A-RELEASE-RP RIS >> TESTCT1 | 7 693 984
+2026-11-05 09:04:00,028 [20:20] DEBUG Association - TESTCT1(105): close socket | 7 702 176
+2026-11-05 09:05:00,000 [RIS:12] INFO  Association - Association(106) accepted 192.0.2.25:50106 | 7 710 368
+2026-11-05 09:05:00,000 [RIS:12] DEBUG Association - Association(106) enter state: Sta2 | 7 718 560
+2026-11-05 09:05:00,000 [RIS:12] DEBUG NetworkConnection - Wait for connections on 0.0.0.0:1040 | 7 726 752
+2026-11-05 09:05:00,007 [21:21] DEBUG Association - Association(106): start ARTIM 5000ms | 7 734 944
+2026-11-05 09:05:00,007 [21:21] INFO  Association - Association(106): A-ASSOCIATE-RQ TESTCT1 >> RIS | 7 743 136
+2026-11-05 09:05:00,007 [21:21] DEBUG Association - A-ASSOCIATE-RQ[ | 7 751 328
+  calledAET = RIS
+  callingAET = TESTCT1
+  implClassUID = 2.25.4242
+  implVersionName = SYNTHETIC_CT_1
+  maxPDULength = 16384
+  PresentationContext[id=1, as=1.2.840.10008.5.1.4.31 - Modality Worklist Information Model - FIND
+    ts = 1.2.840.10008.1.2 - Implicit VR Little Endian]
+] | 1 7751328 0
+2026-11-05 09:05:00,007 [21:21] INFO  PDUEncoder - TESTCT1(106): A-ASSOCIATE-AC RIS >> TESTCT1 | 7 759 520
+2026-11-05 09:05:00,014 [21:21] DEBUG PDUDecoder - TESTCT1(106) >> 1:C-FIND-RQ [pcid=1, prior=0, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND, ts=1.2.840.10008.1.2/Implicit VR Little Endian] | 7 767 712
+2026-11-05 09:05:00,014 [21:21] DEBUG DicomServiceRegistry - Dataset: | 7 775 904
+(0008,0005) CS #0 [] Specific Character Set
+(0008,0050) SH #0 [] Accession Number
+(0010,0010) PN #0 [] Patient’s Name
+(0010,0020) LO #0 [] Patient ID
+(0040,0100) SQ #0 [] Scheduled Procedure Step Sequence
+>(0008,0060) CS #2 [CT] Modality
+>(0040,0001) AE #7 [TESTCT1] Scheduled Station AE Title
+>(0040,0002) DA #8 [20261105] Scheduled Procedure Step Start Date
+>(0040,0010) SH #0 [] Scheduled Station Name
+2026-11-05 09:05:00,014 [21:21] INFO  DicomWorklist - Fetching data... | 7 784 096
+2026-11-05 09:05:00,014 [21:21] INFO  ConnectorBase - Start invoke process lf0000006a | 7 792 288
+2026-11-05 09:05:00,014 [21:21] INFO  ConnectorBase - Finish invoke process lf0000006a in 94ms | 7 800 480
+2026-11-05 09:05:00,014 [21:21] INFO  DicomWorklist - Loading data for TESTCT1 | 7 808 672
+2026-11-05 09:05:00,014 [21:21] DEBUG DicomWorklist - Acts - [1] | 7 816 864
+2026-11-05 09:05:00,021 [TESTCT1:1] DEBUG PDUEncoder - TESTCT1(106) << 1:C-FIND-RSP [pcid=1, status=FF00H, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND, ts=1.2.840.10008.1.2/Implicit VR Little Endian] | 7 825 056
+2026-11-05 09:05:00,021 [TESTCT1:1] DEBUG PDUEncoder - Dataset: | 7 833 248
+(0008,0005) CS #10 [ISO_IR 100] Specific Character Set
+(0008,0050) LO #10 [SYNACC0005] Accession Number
+(0010,0010) PN #18 [SYNTHETIC^PATIENT5] Patient’s Name
+(0010,0020) LO #10 [SYNPID0005] Patient ID
+(0020,000D) UI #11 [2.25.810005] Study Instance UID
+(0040,0100) SQ #0 [] Scheduled Procedure Step Sequence
+>(0008,0060) CS #2 [CT] Modality
+>(0040,0001) AE #7 [TESTCT1] Scheduled Station AE Title
+>(0040,0002) DA #8 [20261105] Scheduled Procedure Step Start Date
+2026-11-05 09:05:00,021 [TESTCT1:1] DEBUG PDUEncoder - TESTCT1(106) << 1:C-FIND-RSP [pcid=1, status=0H, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND] | 7 841 440
+2026-11-05 09:05:00,028 [21:21] INFO  Association - TESTCT1(106): A-RELEASE-RQ TESTCT1 << RIS | 7 849 632
+2026-11-05 09:05:00,028 [21:21] DEBUG Association - TESTCT1(106) enter state: Sta8 | 7 857 824
+2026-11-05 09:05:00,028 [21:21] INFO  PDUEncoder - TESTCT1(106): A-RELEASE-RP RIS >> TESTCT1 | 7 866 016
+2026-11-05 09:05:00,028 [21:21] DEBUG Association - TESTCT1(106): close socket | 7 874 208
+2026-11-05 09:06:00,000 [RIS:12] INFO  Association - Association(107) accepted 192.0.2.30:50107 | 7 882 400
+2026-11-05 09:06:00,000 [RIS:12] DEBUG Association - Association(107) enter state: Sta2 | 7 890 592
+2026-11-05 09:06:00,000 [RIS:12] DEBUG NetworkConnection - Wait for connections on 0.0.0.0:1040 | 7 898 784
+2026-11-05 09:06:00,007 [22:22] DEBUG Association - Association(107): start ARTIM 5000ms | 7 906 976
+2026-11-05 09:06:00,007 [22:22] INFO  Association - Association(107): A-ASSOCIATE-RQ TESTUS1 >> RIS | 7 915 168
+2026-11-05 09:06:00,007 [22:22] DEBUG Association - A-ASSOCIATE-RQ[ | 7 923 360
+  calledAET = RIS
+  callingAET = TESTUS1
+  implClassUID = 2.25.4242
+  implVersionName = SYNTHETIC_US_1
+  maxPDULength = 16384
+  PresentationContext[id=1, as=1.2.840.10008.5.1.4.31 - Modality Worklist Information Model - FIND
+    ts = 1.2.840.10008.1.2 - Implicit VR Little Endian]
+] | 1 7923360 0
+2026-11-05 09:06:00,007 [22:22] INFO  PDUEncoder - TESTUS1(107): A-ASSOCIATE-AC RIS >> TESTUS1 | 7 931 552
+2026-11-05 09:06:00,007 [22:22] DEBUG PDUDecoder - TESTUS1(107) >> 1:C-ECHO-RQ [pcid=1, cuid=1.2.840.10008.1.1/Verification SOP Class] | 7 939 744
+2026-11-05 09:06:00,007 [TESTUS1:1] DEBUG PDUEncoder - TESTUS1(107) << 1:C-ECHO-RSP [pcid=1, status=0H, cuid=1.2.840.10008.1.1/Verification SOP Class] | 7 947 936
+2026-11-05 09:06:00,014 [22:22] INFO  Association - TESTUS1(107): A-RELEASE-RQ TESTUS1 << RIS | 7 956 128
+2026-11-05 09:06:00,014 [22:22] DEBUG Association - TESTUS1(107) enter state: Sta8 | 7 964 320
+2026-11-05 09:06:00,014 [22:22] INFO  PDUEncoder - TESTUS1(107): A-RELEASE-RP RIS >> TESTUS1 | 7 972 512
+2026-11-05 09:06:00,014 [22:22] DEBUG Association - TESTUS1(107): close socket | 7 980 704
+2026-11-05 09:07:00,000 [RIS:12] INFO  Association - Association(108) accepted 192.0.2.30:50108 | 7 988 896
+2026-11-05 09:07:00,000 [RIS:12] DEBUG Association - Association(108) enter state: Sta2 | 7 997 088
+2026-11-05 09:07:00,000 [RIS:12] DEBUG NetworkConnection - Wait for connections on 0.0.0.0:1040 | 8 005 280
+2026-11-05 09:07:00,007 [23:23] DEBUG Association - Association(108): start ARTIM 5000ms | 8 013 472
+2026-11-05 09:07:00,007 [23:23] INFO  Association - Association(108): A-ASSOCIATE-RQ TESTUS2 >> RIS | 8 021 664
+2026-11-05 09:07:00,007 [23:23] DEBUG Association - A-ASSOCIATE-RQ[ | 8 029 856
+  calledAET = RIS
+  callingAET = TESTUS2
+  implClassUID = 2.25.4242
+  implVersionName = SYNTHETIC_US_1
+  maxPDULength = 16384
+  PresentationContext[id=1, as=1.2.840.10008.5.1.4.31 - Modality Worklist Information Model - FIND
+    ts = 1.2.840.10008.1.2 - Implicit VR Little Endian]
+] | 1 8029856 0
+2026-11-05 09:07:00,007 [23:23] INFO  PDUEncoder - TESTUS2(108): A-ASSOCIATE-AC RIS >> TESTUS2 | 8 038 048
+2026-11-05 09:07:00,007 [23:23] DEBUG PDUDecoder - TESTUS2(108) >> 1:C-ECHO-RQ [pcid=1, cuid=1.2.840.10008.1.1/Verification SOP Class] | 8 046 240
+2026-11-05 09:07:00,007 [TESTUS2:1] DEBUG PDUEncoder - TESTUS2(108) << 1:C-ECHO-RSP [pcid=1, status=0H, cuid=1.2.840.10008.1.1/Verification SOP Class] | 8 054 432
+2026-11-05 09:07:00,014 [23:23] INFO  Association - TESTUS2(108): A-RELEASE-RQ TESTUS2 << RIS | 8 062 624
+2026-11-05 09:07:00,014 [23:23] DEBUG Association - TESTUS2(108) enter state: Sta8 | 8 070 816
+2026-11-05 09:07:00,014 [23:23] INFO  PDUEncoder - TESTUS2(108): A-RELEASE-RP RIS >> TESTUS2 | 8 079 008
+2026-11-05 09:07:00,014 [23:23] DEBUG Association - TESTUS2(108): close socket | 8 087 200
+2026-11-05 09:08:00,000 [RIS:12] INFO  Association - Association(109) accepted 192.0.2.26:50109 | 8 095 392
+2026-11-05 09:08:00,000 [RIS:12] DEBUG Association - Association(109) enter state: Sta2 | 8 103 584
+2026-11-05 09:08:00,000 [RIS:12] DEBUG NetworkConnection - Wait for connections on 0.0.0.0:1040 | 8 111 776
+2026-11-05 09:08:00,007 [24:24] DEBUG Association - Association(109): start ARTIM 5000ms | 8 119 968
+2026-11-05 09:08:00,007 [24:24] INFO  Association - Association(109): A-ASSOCIATE-RQ TESTCT2 >> RIS2 | 8 128 160
+2026-11-05 09:08:00,007 [24:24] DEBUG Association - A-ASSOCIATE-RQ[ | 8 136 352
+  calledAET = RIS2
+  callingAET = TESTCT2
+  implClassUID = 2.25.4242
+  implVersionName = SYNTHETIC_CT_2
+  maxPDULength = 16384
+  PresentationContext[id=1, as=1.2.840.10008.5.1.4.31 - Modality Worklist Information Model - FIND
+    ts = 1.2.840.10008.1.2 - Implicit VR Little Endian]
+] | 1 8136352 0
+2026-11-05 09:08:00,007 [24:24] INFO  PDUEncoder - TESTCT2(109): A-ASSOCIATE-AC RIS2 >> TESTCT2 | 8 144 544
+2026-11-05 09:08:00,014 [24:24] DEBUG PDUDecoder - TESTCT2(109) >> 1:C-FIND-RQ [pcid=1, prior=0, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND, ts=1.2.840.10008.1.2/Implicit VR Little Endian] | 8 152 736
+2026-11-05 09:08:00,014 [24:24] DEBUG DicomServiceRegistry - Dataset: | 8 160 928
+(0008,0005) CS #0 [] Specific Character Set
+(0008,0050) SH #0 [] Accession Number
+(0010,0010) PN #0 [] Patient’s Name
+(0010,0020) LO #0 [] Patient ID
+(0040,0100) SQ #0 [] Scheduled Procedure Step Sequence
+>(0008,0060) CS #2 [CT] Modality
+>(0040,0001) AE #7 [TESTCT9] Scheduled Station AE Title
+>(0040,0002) DA #8 [20261105] Scheduled Procedure Step Start Date
+>(0040,0010) SH #0 [] Scheduled Station Name
+2026-11-05 09:08:00,014 [24:24] INFO  DicomWorklist - Fetching data... | 8 169 120
+2026-11-05 09:08:00,014 [24:24] INFO  ConnectorBase - Start invoke process lf0000006d | 8 177 312
+2026-11-05 09:08:00,014 [24:24] INFO  ConnectorBase - Finish invoke process lf0000006d in 94ms | 8 185 504
+2026-11-05 09:08:00,014 [24:24] INFO  DicomWorklist - Loading data for TESTCT2 | 8 193 696
+2026-11-05 09:08:00,014 [24:24] DEBUG DicomWorklist - Acts - [1] | 8 201 888
+2026-11-05 09:08:00,021 [TESTCT2:1] DEBUG PDUEncoder - TESTCT2(109) << 1:C-FIND-RSP [pcid=1, status=FF00H, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND, ts=1.2.840.10008.1.2/Implicit VR Little Endian] | 8 210 080
+2026-11-05 09:08:00,021 [TESTCT2:1] DEBUG PDUEncoder - Dataset: | 8 218 272
+(0008,0005) CS #10 [ISO_IR 100] Specific Character Set
+(0008,0050) LO #10 [SYNACC0006] Accession Number
+(0010,0010) PN #18 [SYNTHETIC^PATIENT6] Patient’s Name
+(0010,0020) LO #10 [SYNPID0006] Patient ID
+(0020,000D) UI #11 [2.25.810006] Study Instance UID
+(0040,0100) SQ #0 [] Scheduled Procedure Step Sequence
+>(0008,0060) CS #2 [CT] Modality
+>(0040,0001) AE #7 [TESTCT9] Scheduled Station AE Title
+>(0040,0002) DA #8 [20261105] Scheduled Procedure Step Start Date
+2026-11-05 09:08:00,021 [TESTCT2:1] DEBUG PDUEncoder - TESTCT2(109) << 1:C-FIND-RSP [pcid=1, status=0H, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND] | 8 226 464
+2026-11-05 09:08:00,028 [24:24] INFO  Association - TESTCT2(109): A-RELEASE-RQ TESTCT2 << RIS2 | 8 234 656
+2026-11-05 09:08:00,028 [24:24] DEBUG Association - TESTCT2(109) enter state: Sta8 | 8 242 848
+2026-11-05 09:08:00,028 [24:24] INFO  PDUEncoder - TESTCT2(109): A-RELEASE-RP RIS2 >> TESTCT2 | 8 251 040
+2026-11-05 09:08:00,028 [24:24] DEBUG Association - TESTCT2(109): close socket | 8 259 232
+2026-11-05 09:09:00,000 [RIS:12] INFO  Association - Association(110) accepted 192.0.2.27:50110 | 8 267 424
+2026-11-05 09:09:00,000 [RIS:12] DEBUG Association - Association(110) enter state: Sta2 | 8 275 616
+2026-11-05 09:09:00,000 [RIS:12] DEBUG NetworkConnection - Wait for connections on 0.0.0.0:1040 | 8 283 808
+2026-11-05 09:09:00,007 [25:25] DEBUG Association - Association(110): start ARTIM 5000ms | 8 292 000
+2026-11-05 09:09:00,007 [25:25] INFO  Association - Association(110): A-ASSOCIATE-RQ TESTDX1 >> RIS | 8 300 192
+2026-11-05 09:09:00,007 [25:25] DEBUG Association - A-ASSOCIATE-RQ[ | 8 308 384
+  calledAET = RIS
+  callingAET = TESTDX1
+  implClassUID = 2.25.4242
+  implVersionName = SYNTHETIC_DX_1
+  maxPDULength = 16384
+  PresentationContext[id=1, as=1.2.840.10008.5.1.4.31 - Modality Worklist Information Model - FIND
+    ts = 1.2.840.10008.1.2 - Implicit VR Little Endian]
+] | 1 8308384 0
+2026-11-05 09:09:00,007 [25:25] INFO  PDUEncoder - TESTDX1(110): A-ASSOCIATE-RJ [result=1, source=1, reason=7 - Calling AE Title not recognized] | 8 316 576
+2026-11-05 09:09:00,007 [25:25] DEBUG Association - TESTDX1(110): close socket | 8 324 768
+2026-11-05 09:10:00,000 [RIS:12] INFO  Association - Association(111) accepted 192.0.2.22:50111 | 8 332 960
+2026-11-05 09:10:00,000 [RIS:12] DEBUG Association - Association(111) enter state: Sta2 | 8 341 152
+2026-11-05 09:10:00,000 [RIS:12] DEBUG NetworkConnection - Wait for connections on 0.0.0.0:1040 | 8 349 344
+2026-11-05 09:10:00,007 [26:26] DEBUG Association - Association(111): start ARTIM 5000ms | 8 357 536
+2026-11-05 09:10:00,007 [26:26] INFO  Association - Association(111): A-ASSOCIATE-RQ AE_TESTMG >> RIS | 8 365 728
+2026-11-05 09:10:00,007 [26:26] DEBUG Association - A-ASSOCIATE-RQ[ | 8 373 920
+  calledAET = RIS
+  callingAET = AE_TESTMG
+  implClassUID = 2.25.4242
+  implVersionName = GE_TestMammo_1
+  maxPDULength = 16384
+  PresentationContext[id=1, as=1.2.840.10008.5.1.4.31 - Modality Worklist Information Model - FIND
+    ts = 1.2.840.10008.1.2 - Implicit VR Little Endian]
+] | 1 8373920 0
+2026-11-05 09:10:00,007 [26:26] INFO  PDUEncoder - AE_TESTMG(111): A-ASSOCIATE-AC RIS >> AE_TESTMG | 8 382 112
+2026-11-05 09:10:00,014 [26:26] DEBUG PDUDecoder - AE_TESTMG(111) >> 1:C-FIND-RQ [pcid=1, prior=0, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND, ts=1.2.840.10008.1.2/Implicit VR Little Endian] | 8 390 304
+2026-11-05 09:10:00,014 [26:26] DEBUG DicomServiceRegistry - Dataset: | 8 398 496
+(0008,0005) CS #0 [] Specific Character Set
+(0008,0050) SH #0 [] Accession Number
+(0010,0010) PN #0 [] Patient’s Name
+(0010,0020) LO #0 [] Patient ID
+(0040,0100) SQ #0 [] Scheduled Procedure Step Sequence
+>(0008,0060) CS #0 [] Modality
+>(0040,0001) AE #0 [] Scheduled Station AE Title
+>(0040,0002) DA #0 [] Scheduled Procedure Step Start Date
+>(0040,0010) SH #0 [] Scheduled Station Name
+2026-11-05 09:10:00,014 [26:26] INFO  DicomWorklist - Fetching data... | 8 406 688
+2026-11-05 09:10:00,014 [26:26] INFO  ConnectorBase - Start invoke process lf0000006f | 8 414 880
+2026-11-05 09:10:00,014 [26:26] INFO  ConnectorBase - Finish invoke process lf0000006f in 94ms | 8 423 072
+2026-11-05 09:10:00,014 [26:26] INFO  DicomWorklist - Loading data for AE_TESTMG | 8 431 264
+2026-11-05 09:10:00,014 [26:26] DEBUG DicomWorklist - Acts - [0] | 8 439 456
+2026-11-05 09:10:00,014 [AE_TESTMG:1] DEBUG PDUEncoder - AE_TESTMG(111) << 1:C-FIND-RSP [pcid=1, status=0H, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND] | 8 447 648
+2026-11-05 09:10:00,021 [26:26] INFO  Association - AE_TESTMG(111): A-RELEASE-RQ AE_TESTMG << RIS | 8 455 840
+2026-11-05 09:10:00,021 [26:26] DEBUG Association - AE_TESTMG(111) enter state: Sta8 | 8 464 032
+2026-11-05 09:10:00,021 [26:26] INFO  PDUEncoder - AE_TESTMG(111): A-RELEASE-RP RIS >> AE_TESTMG | 8 472 224
+2026-11-05 09:10:00,021 [26:26] DEBUG Association - AE_TESTMG(111): close socket | 8 480 416
+2026-11-05 09:11:00,000 [RIS:12] INFO  Association - Association(112) accepted 192.0.2.21:50112 | 8 488 608
+2026-11-05 09:11:00,000 [RIS:12] DEBUG Association - Association(112) enter state: Sta2 | 8 496 800
+2026-11-05 09:11:00,000 [RIS:12] DEBUG NetworkConnection - Wait for connections on 0.0.0.0:1040 | 8 504 992
+2026-11-05 09:11:00,007 [20:20] DEBUG Association - Association(112): start ARTIM 5000ms | 8 513 184
+2026-11-05 09:11:00,007 [20:20] INFO  Association - Association(112): A-ASSOCIATE-RQ TESTMR1 >> RIS | 8 521 376
+2026-11-05 09:11:00,007 [20:20] DEBUG Association - A-ASSOCIATE-RQ[ | 8 529 568
+  calledAET = RIS
+  callingAET = TESTMR1
+  implClassUID = 2.25.4242
+  implVersionName = SYNTHETIC_MR_1
+  maxPDULength = 16384
+  PresentationContext[id=1, as=1.2.840.10008.5.1.4.31 - Modality Worklist Information Model - FIND
+    ts = 1.2.840.10008.1.2 - Implicit VR Little Endian]
+] | 1 8529568 0
+2026-11-05 09:11:00,007 [20:20] INFO  PDUEncoder - TESTMR1(112): A-ASSOCIATE-AC RIS >> TESTMR1 | 8 537 760
+2026-11-05 09:11:00,014 [20:20] DEBUG PDUDecoder - TESTMR1(112) >> 1:C-FIND-RQ [pcid=1, prior=0, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND, ts=1.2.840.10008.1.2/Implicit VR Little Endian] | 8 545 952
+2026-11-05 09:11:00,014 [20:20] DEBUG DicomServiceRegistry - Dataset: | 8 554 144
+(0008,0005) CS #0 [] Specific Character Set
+(0008,0050) SH #0 [] Accession Number
+(0010,0010) PN #0 [] Patient’s Name
+(0010,0020) LO #0 [] Patient ID
+(0040,0100) SQ #0 [] Scheduled Procedure Step Sequence
+>(0008,0060) CS #2 [MR] Modality
+>(0040,0001) AE #0 [] Scheduled Station AE Title
+>(0040,0002) DA #8 [20261105] Scheduled Procedure Step Start Date
+>(0040,0010) SH #0 [] Scheduled Station Name
+2026-11-05 09:11:00,014 [20:20] INFO  DicomWorklist - Fetching data... | 8 562 336
+2026-11-05 09:11:00,014 [20:20] INFO  ConnectorBase - Start invoke process lf00000070 | 8 570 528
+2026-11-05 09:11:00,014 [20:20] INFO  ConnectorBase - Finish invoke process lf00000070 in 94ms | 8 578 720
+2026-11-05 09:11:00,014 [20:20] INFO  DicomWorklist - Loading data for TESTMR1 | 8 586 912
+2026-11-05 09:11:00,014 [20:20] DEBUG DicomWorklist - Acts - [0] | 8 595 104
+2026-11-05 09:11:00,014 [TESTMR1:1] DEBUG PDUEncoder - TESTMR1(112) << 1:C-FIND-RSP [pcid=1, status=0H, cuid=1.2.840.10008.5.1.4.31/Modality Worklist Information Model - FIND] | 8 603 296
+2026-11-05 09:11:00,021 [20:20] INFO  Association - TESTMR1(112): A-RELEASE-RQ TESTMR1 << RIS | 8 611 488
+2026-11-05 09:11:00,021 [20:20] DEBUG Association - TESTMR1(112) enter state: Sta8 | 8 619 680
+2026-11-05 09:11:00,021 [20:20] INFO  PDUEncoder - TESTMR1(112): A-RELEASE-RP RIS >> TESTMR1 | 8 627 872
+2026-11-05 09:11:00,021 [20:20] DEBUG Association - TESTMR1(112): close socket | 8 636 064
+2026-11-05 09:12:00,000 [Thread 9 - Dicom:9] INFO  Association - Association(113) initiated 192.0.2.40:104 | 8 644 256
+2026-11-05 09:12:00,000 [Thread 9 - Dicom:9] INFO  Association - Association(113): A-ASSOCIATE-RQ TESTQR >> TESTPACS | 8 652 448
+2026-11-05 09:12:00,000 [Thread 9 - Dicom:9] INFO  Association - TESTQR(113): A-RELEASE-RP TESTPACS >> TESTQR | 8 660 640
