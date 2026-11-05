@@ -44,6 +44,10 @@ public sealed class SearchService(IndexDatabase db)
         var fts = query.Match;
         var queryIgnored = !string.IsNullOrWhiteSpace(request.Text) && query.IsEmpty && query.ShortExcluded.Count == 0;
         using var c = db.Open();
+
+        // One read snapshot for the page, the counts and the coverage notes: a scan committing between these queries
+        // would otherwise show a count that disagrees with the listed events (WAL readers see each new commit).
+        using var snapshot = ReadSnapshot.Begin(c);
         var (where, args) = BuildWhere(request, query);
         var limit = Math.Clamp(request.Limit, 1, MaxLimit);
         var desc = !request.OldestFirst;
@@ -300,4 +304,27 @@ public sealed class SearchService(IndexDatabase db)
         r.IsDBNull(6) ? null : r.GetInt64(6), r.GetInt64(7) != 0, r.IsDBNull(8) ? null : r.GetString(8),
         (EventLevel)r.GetInt32(9), r.GetString(10), (EventKind)r.GetInt32(11), r.GetString(12), r.IsDBNull(13) ? null : r.GetString(13),
         r.GetString(14), r.GetInt64(15) != 0, r.GetInt64(16) != 0);
+}
+
+/// <summary>A deferred read transaction: every statement until disposal reads the same committed state of the index.</summary>
+internal sealed class ReadSnapshot : IDisposable
+{
+    private readonly Microsoft.Data.Sqlite.SqliteConnection _connection;
+
+    private ReadSnapshot(Microsoft.Data.Sqlite.SqliteConnection connection) => _connection = connection;
+
+    public static ReadSnapshot Begin(Microsoft.Data.Sqlite.SqliteConnection connection)
+    {
+        using var cmd = connection.CreateCommand();
+        cmd.CommandText = "BEGIN DEFERRED";
+        cmd.ExecuteNonQuery();
+        return new ReadSnapshot(connection);
+    }
+
+    public void Dispose()
+    {
+        using var cmd = _connection.CreateCommand();
+        cmd.CommandText = "COMMIT";
+        cmd.ExecuteNonQuery();
+    }
 }
