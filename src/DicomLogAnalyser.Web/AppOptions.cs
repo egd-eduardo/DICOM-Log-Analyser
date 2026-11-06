@@ -38,6 +38,9 @@ public sealed class AppOptions
 
     /// <summary>Seconds between checks of chosen files for new lines (live indexing); 0 turns it off.</summary>
     public int LiveIntervalSeconds { get; init; } = 5;
+
+    /// <summary>Read limit for folders on network shares, in megabytes per second (0 = no limit). Default 2 MB/s.</summary>
+    public int NetworkReadLimitMb { get; init; } = 2;
     public TimeSpan SessionIdle { get; init; } = TimeSpan.FromMinutes(30);
 
     public string Origin => Mode == AppMode.Server ? PublicOrigin!.GetLeftPart(UriPartial.Authority) : "";
@@ -88,6 +91,7 @@ public sealed class AppOptions
             SourceRoots = List(env("DLA_SOURCE_ROOTS")),
             MaxUploadBytes = (env("DLA_MAX_UPLOAD_MB") is { Length: > 0 } mb ? long.Parse(mb, NumberStyles.None, CultureInfo.InvariantCulture) : 1024) * 1024 * 1024,
             ScanIntervalMinutes = env("DLA_SCAN_INTERVAL_MINUTES") is { Length: > 0 } si ? int.Parse(si, NumberStyles.None, CultureInfo.InvariantCulture) : 0,
+            NetworkReadLimitMb = (Arg("--network-read-limit") ?? env("DLA_NETWORK_READ_LIMIT_MB")) is { Length: > 0 } nr ? int.Parse(nr, NumberStyles.None, CultureInfo.InvariantCulture) : 2,
             LiveIntervalSeconds = (Arg("--live-interval") ?? env("DLA_LIVE_INTERVAL_SECONDS")) is { Length: > 0 } li ? int.Parse(li, NumberStyles.None, CultureInfo.InvariantCulture) : 5,
             SessionIdle = TimeSpan.FromMinutes(env("DLA_SESSION_IDLE_MINUTES") is { Length: > 0 } idle ? int.Parse(idle, NumberStyles.None, CultureInfo.InvariantCulture) : 30),
         };
@@ -100,6 +104,7 @@ public sealed class AppOptions
         var problems = new List<string>();
         if (MaxUploadBytes <= 0) problems.Add("DLA_MAX_UPLOAD_MB must be positive.");
         if (ScanIntervalMinutes is < 0 or > 10080) problems.Add("DLA_SCAN_INTERVAL_MINUTES must be between 0 (off) and 10080.");
+        if (NetworkReadLimitMb is < 0 or > 10_000) problems.Add("The network read limit must be between 0 (no limit) and 10000 MB/s.");
         if (LiveIntervalSeconds is not 0 and (< 2 or > 3600)) problems.Add("The live update interval must be 0 (off) or between 2 and 3600 seconds.");
         if (SessionIdle <= TimeSpan.Zero || SessionIdle > TimeSpan.FromHours(12)) problems.Add("DLA_SESSION_IDLE_MINUTES must be between 1 and 720.");
         if (Mode == AppMode.Local)

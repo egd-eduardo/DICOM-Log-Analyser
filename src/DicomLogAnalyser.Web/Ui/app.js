@@ -645,6 +645,8 @@ function matches(text) { if (!live.regex) return true; live.regex.lastIndex = 0;
 
 async function pollLive() {
   if ($('tab-live').classList.contains('hidden') || live.busy) return;
+  // While the browser tab is hidden (another application in front), wait; visibilitychange resumes it.
+  if (document.hidden) { live.timer = 0; return; }
   const out = $('lv-out');
   if (!live.paused) {
     live.busy = true;
@@ -851,6 +853,7 @@ async function saveChooser() {
 let pollTimer = 0;
 async function pollScan() {
   window.clearTimeout(pollTimer);
+  if (document.hidden) { pollTimer = window.setTimeout(pollScan, 30000); return; }
   try {
     const s = await api('/api/scan/status');
     const bar = $('scanbar');
@@ -1146,7 +1149,7 @@ function stopWorklist() { window.clearTimeout(worklist.timer); worklist.timer = 
 
 function scheduleWorklist() {
   stopWorklist();
-  if ($('wl-live').checked && !$('tab-worklist').classList.contains('hidden')) worklist.timer = window.setTimeout(() => { loadWorklist().catch((e) => notify(e.message)); }, 10000);
+  if ($('wl-live').checked && !$('tab-worklist').classList.contains('hidden') && !document.hidden) worklist.timer = window.setTimeout(() => { loadWorklist().catch((e) => notify(e.message)); }, 10000);
 }
 
 /** @param {number} ts @param {boolean} utcKnown */
@@ -1220,6 +1223,13 @@ async function start() {
   $('wl-hours').addEventListener('change', () => loadWorklist().catch((e) => notify(e.message)));
   $('wl-refresh').addEventListener('click', () => loadWorklist().catch((e) => notify(e.message)));
   $('wl-live').addEventListener('change', scheduleWorklist);
+  // Pause periodic work while the page is not visible; catch up as soon as it is shown again.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    pollScan();
+    if (!$('tab-live').classList.contains('hidden') && !live.timer && !live.paused) pollLive();
+    if (!$('tab-worklist').classList.contains('hidden') && $('wl-live').checked) loadWorklist().catch((e) => notify(e.message));
+  });
   $('exam-form').addEventListener('submit', (/** @type {Event} */ ev) => { ev.preventDefault(); runExam(undefined).catch((e) => notify(e.message)); });
   $('q-exam').addEventListener('click', () => { const q = $('q').value.trim(); showTab('exam'); if (q) runExam(q).catch((e) => notify(e.message)); });
   $('d-close').addEventListener('click', () => $('detail').close());
