@@ -99,7 +99,9 @@ public sealed class CoordinatorTests : IAsyncLifetime
         };
         Expect(2);
         Coordinator.EnqueueScan("test", [id]);
-        await Task.Delay(100);
+        // Wait until the scan has really started (it runs on its own background-priority thread, which a busy machine
+        // may schedule later than a fixed delay assumes).
+        for (var i = 0; i < 200 && Coordinator.Status.State != "running"; i++) await Task.Delay(25);
         Assert.Equal("running", Coordinator.Status.State);
 
         // Saved while the first scan is still running: the reset must wait for it, not race it.
