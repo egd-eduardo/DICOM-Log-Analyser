@@ -28,26 +28,31 @@ public class ResourceTests
     [Fact]
     public void Network_share_is_read_at_the_limit_and_local_folders_are_not_paced()
     {
-        static (ScanSummary Summary, double Seconds) Scan(bool network)
+        const int lines = 5_000;
+        const long limit = 256 * 1024;
+        static (ScanSummary Summary, double Seconds, long Bytes) Scan(bool network)
         {
             using var f = new IndexFixture();
             var line = "INF 2026.11.04 10:00:00 SPS - Receiving (1) ... PID SYNPID1, ANR SYNA1REP, padding padding padding padding padding\r\n";
-            File.WriteAllText(Path.Combine(f.LogDir, "Gateway.log"), string.Concat(Enumerable.Repeat(line, 20_000)));
-            var ingestor = new Ingestor(f.Db, f.Sources, TimeProvider.System) { NetworkReadBytesPerSecond = 1024 * 1024, IsNetworkPath = _ => network };
+            var path = Path.Combine(f.LogDir, "Gateway.log");
+            File.WriteAllText(path, string.Concat(Enumerable.Repeat(line, lines)));
+            var ingestor = new Ingestor(f.Db, f.Sources, TimeProvider.System) { NetworkReadBytesPerSecond = limit, IsNetworkPath = _ => network };
             var sw = Stopwatch.StartNew();
             var summary = ingestor.Scan(f.AddSource("Europe/Lisbon"), null, CancellationToken.None);
-            return (summary, sw.Elapsed.TotalSeconds);
+            return (summary, sw.Elapsed.TotalSeconds, new FileInfo(path).Length);
         }
 
-        var size = 20_000 * 120 / (1024.0 * 1024); // about 2.3 MB
+        // About 0.6 MB at 256 KB/s: at least about 2.3 s however fast the machine indexes. Only a lower bound is
+        // asserted; timings on shared CI machines are too noisy to compare two scans with each other.
         var share = Scan(network: true);
         Assert.True(share.Summary.ReadLimited);
-        Assert.Equal(20_000, share.Summary.EventsAdded);
-        Assert.True(share.Seconds >= size * 0.8, $"{share.Seconds:F2} s for {size:F1} MB at 1 MB/s");
+        Assert.Equal(lines, share.Summary.EventsAdded);
+        var minimum = (double)share.Bytes / limit * 0.8;
+        Assert.True(share.Seconds >= minimum, $"{share.Seconds:F2} s, expected at least {minimum:F2} s");
 
         var local = Scan(network: false);
         Assert.False(local.Summary.ReadLimited);
-        Assert.True(local.Seconds < share.Seconds);
+        Assert.Equal(lines, local.Summary.EventsAdded);
     }
 
     [Fact]
