@@ -79,7 +79,7 @@ public static class AppHost
         builder.Services.AddSingleton(db);
         builder.Services.AddSingleton(sources);
         builder.Services.AddSingleton(new AuditLog(db, time));
-        builder.Services.AddSingleton(new Ingestor(db, sources, time));
+        builder.Services.AddSingleton(new Ingestor(db, sources, time) { NetworkReadBytesPerSecond = options.NetworkReadLimitMb * 1024L * 1024L });
         var searchService = new SearchService(db);
         builder.Services.AddSingleton(searchService);
         builder.Services.AddSingleton(new Core.Exam.ExamHistoryService(searchService));

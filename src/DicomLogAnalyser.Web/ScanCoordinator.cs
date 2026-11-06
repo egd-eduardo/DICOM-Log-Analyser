@@ -106,7 +106,17 @@ public sealed class ScanCoordinator(
             lock (_lock) _current = cts;
             try
             {
-                await Task.Run(() => Execute(item, cts.Token), cts.Token).ConfigureAwait(false);
+                // A dedicated thread at background priority: scanning and index writes give way to other programs.
+                var token = cts.Token;
+                await Task.Factory.StartNew(
+                    () =>
+                    {
+                        using var lowered = Platform.BackgroundPriority.Enter();
+                        Execute(item, token);
+                    },
+                    token,
+                    TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default).ConfigureAwait(false);
             }
             catch (OperationCanceledException) when (!stoppingToken.IsCancellationRequested)
             {
@@ -205,7 +215,7 @@ public sealed class ScanCoordinator(
             lock (_lock) _status = _status with { SourceLabel = source.Label, FilesDone = 0, FilesTotal = 0 };
             var summary = ScanOne(source, progress, ct);
             totalEvents += summary.EventsAdded;
-            outcomes.Add($"{source.Label}: {summary.Status} ({summary.EventsAdded.ToString("N0", CultureInfo.InvariantCulture)} events, {summary.FilesChanged} changed file(s))");
+            outcomes.Add($"{source.Label}: {summary.Status} ({summary.EventsAdded.ToString("N0", CultureInfo.InvariantCulture)} events, {summary.FilesChanged} changed file(s){(summary.ReadLimited ? $", network share read at up to {options.NetworkReadLimitMb} MB/s" : "")})");
             audit.Write(work.Actor, "scan", new Dictionary<string, object?>
             {
                 ["sourceId"] = source.Id,

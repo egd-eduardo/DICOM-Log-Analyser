@@ -115,4 +115,28 @@ public sealed class CoordinatorTests : IAsyncLifetime
         Assert.Equal(1, IndexDatabase.Scalar<long>(c, "SELECT count(*) FROM events WHERE ts_text LIKE '2026-11-03 09:40:29%' AND ts = $t", null,
             ("$t", new DateTimeOffset(2026, 11, 3, 14, 40, 29, TimeSpan.Zero).ToUnixTimeMilliseconds())));
     }
+
+    [Fact]
+    public async Task Scans_run_on_a_lowered_thread_that_gives_way_to_other_programs()
+    {
+        var id = AddSource("gw", "b3dweb-gateway/Gateway.log");
+        bool? lowered = null;
+        var poolThread = true;
+        Coordinator.ScanOverride = (s, p, ct) =>
+        {
+            lowered = DicomLogAnalyser.Web.Platform.BackgroundPriority.IsCurrentThreadLowered();
+            poolThread = Thread.CurrentThread.IsThreadPoolThread;
+            return Ingestor.Scan(Sources.Get(s.Id)!, p, ct);
+        };
+        Expect(1);
+        Coordinator.EnqueueScan("test", [id]);
+        await WaitIdle();
+
+        Assert.False(poolThread);
+        if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS()) Assert.True(lowered);
+        Assert.Equal("ok", Sources.Get(id)!.LastScanStatus);
+
+        // The web interface threads keep normal priority.
+        Assert.False(await Task.Run(DicomLogAnalyser.Web.Platform.BackgroundPriority.IsCurrentThreadLowered));
+    }
 }

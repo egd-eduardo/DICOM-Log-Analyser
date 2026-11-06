@@ -158,6 +158,7 @@ static void PrintUsage()
         Local mode (default; this computer only, no password, opens the browser):
           DicomLogAnalyser [--port N] [--no-browser] [--data-dir PATH] [--live-interval SECONDS]
           (--live-interval: how often chosen files are checked for new lines; default 5, 0 = off)
+          [--network-read-limit MB]  (reading speed for folders on network shares; default 2 MB/s, 0 = no limit)
 
         Central mode (behind an identity-aware access proxy; see README):
           DicomLogAnalyser --mode server   (configured with DLA_* environment variables)

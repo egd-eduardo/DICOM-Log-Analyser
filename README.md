@@ -118,7 +118,7 @@ then **Run anyway** (first time only). Use a build signed with your organisation
 ### Options
 
 ```text
-DicomLogAnalyser [--port N] [--no-browser] [--data-dir PATH]
+DicomLogAnalyser [--port N] [--no-browser] [--data-dir PATH] [--network-read-limit MB] [--live-interval SECONDS]
 ```
 
 * `--port` fixes the port (default: a random free port). The server always listens on `127.0.0.1` only.
@@ -126,6 +126,27 @@ DicomLogAnalyser [--port N] [--no-browser] [--data-dir PATH]
 * `--data-dir` changes where the index is stored. Default: `%LOCALAPPDATA%\DicomLogAnalyser` (Windows),
   `~/Library/Application Support/DicomLogAnalyser` (macOS), `~/.local/share/DicomLogAnalyser` (Linux). It must be a
   **local disk**: the program refuses network locations, because SQLite must not live on a network share.
+* `--network-read-limit` caps how fast logs on a **network share** are read during a scan, in MB per second
+  (default 2, `0` = no limit; also `DLA_NETWORK_READ_LIMIT_MB`), so that a scan over Wi-Fi or a VPN leaves bandwidth for
+  video calls. Local folders are not limited.
+* `--live-interval` sets how often chosen files are checked for new lines (default 5 seconds, `0` = off).
+
+### Sharing the computer with other work (video calls, viewers)
+
+Scanning is the only heavy work: the first scan of a folder (and a scan after a fresh session or a time-zone change)
+reads every chosen file and builds the substring index, about one CPU core and roughly 4 times the final index size in
+disk writes while it runs. To keep calls and other programs smooth:
+
+* Scans run on their own thread at **background priority** for CPU and disk (Windows background mode, macOS background
+  QoS, Linux nice 19). Other programs win whenever they need the processor or the disk; the interface keeps normal
+  priority. Measured on 4 cores with 100 MB of logs: a competing program running on every core kept 73 % of its speed
+  during a scan before this change and 91 % after it.
+* Logs on **network shares** are read at up to 2 MB/s by default (see `--network-read-limit`).
+* The browser page stops polling while it is hidden behind other windows and catches up when shown again.
+* At rest (folder indexed, live indexing on) the program uses about 0.4 % of one core and under 100 MB of memory.
+
+If a call still suffers during a first scan, start the scan after the call or press **Cancel scan**: the next scan
+continues where it stopped.
 
 ### How local sign-in works (no password)
 

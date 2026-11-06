@@ -23,6 +23,9 @@ public sealed class ScanSummary
     public int FilesReset { get; set; }
     public long EventsAdded { get; set; }
     public long BytesRead { get; set; }
+
+    /// <summary>The source is on a network share and its reading was paced.</summary>
+    public bool ReadLimited { get; set; }
     public int FilesNotSelected { get; set; }
     public int FilesNew { get; set; }
 }
@@ -40,11 +43,22 @@ public sealed class Ingestor(IndexDatabase db, SourceRepository sources, TimePro
     public const int FingerprintBytes = 4096;
     public const int SniffLines = 200;
     private const int CheckpointEvents = 20_000;
+    private const int PaceEveryLines = 256;
+
+    /// <summary>Read limit for sources on network shares (bytes per second; 0 = no limit).</summary>
+    public long NetworkReadBytesPerSecond { get; init; }
+
+    /// <summary>Test seam: decides whether a folder is on a network share.</summary>
+    internal Func<string, bool> IsNetworkPath { get; init; } = NetworkVolumes.IsNetworkPath;
+
+    private ReadPacer _pacer = new(0);
 
     public ScanSummary Scan(SourceDefinition source, IProgress<ScanProgress>? progress, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(source);
         var summary = new ScanSummary();
+        _pacer = new ReadPacer(NetworkReadBytesPerSecond > 0 && IsNetworkPath(source.Path) ? NetworkReadBytesPerSecond : 0);
+        summary.ReadLimited = _pacer.Active;
         var tz = ResolveTimeZone(source.TimeZone);
         var hint = FormatRegistry.Find(source.FormatHint);
 
@@ -234,9 +248,11 @@ public sealed class Ingestor(IndexDatabase db, SourceRepository sources, TimePro
                 using var reader = new LineReader(stream, offset, line);
                 long pendingSince = 0;
                 long lastLine = line - 1;
+                var paceCount = 0;
                 while (reader.ReadLine() is { } l)
                 {
                     lastLine = l.LineNumber;
+                    if (_pacer.Active && ++paceCount % PaceEveryLines == 0) _pacer.Pace(summary.BytesRead + (reader.Position - startPos), ct);
                     var closed = assembler.Add(l);
                     if (closed is null) continue;
                     lastTs = Write(insert, closed, source.Id, fileId, lastTs);

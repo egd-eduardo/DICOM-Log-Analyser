@@ -153,6 +153,16 @@ status `FF00H`/`FF01H` (its dataset follows on the same thread), the final statu
 Associations the connector initiates itself are excluded. `GET /api/worklist?hours=` returns equipment, findings and
 the 300 most recent associations; the UI refreshes it every 10 seconds while the tab is open.
 
+## Resource use
+
+Scan jobs run on a dedicated thread (`TaskCreationOptions.LongRunning`) lowered by `BackgroundPriority`: Windows
+`THREAD_MODE_BACKGROUND_BEGIN`, macOS `PRIO_DARWIN_BG` for the thread, Linux nice 19 for the thread. The web interface
+and the live-indexing check keep normal priority. `ReadPacer` keeps the average read rate of sources on network shares
+(`NetworkVolumes`, via `DriveInfo.DriveType`) at `--network-read-limit` MB/s by pausing between batches of 256 lines,
+holding no lock other than the scan's own write transaction (searches read in WAL mode and are not blocked). Measured
+on 4 cores, 100 MB of synthetic Gateway logs: first scan about 85 s at one core, 1.9 GB written for a 438 MB index (WAL
+plus FTS5 segment merges; a larger SQLite page cache did not change this), peak memory 245 MB; idle 0.4 % of one core.
+
 ## Scan queue
 
 `ScanCoordinator` (a hosted background service) runs scans, source deletions and purges one at a time from a bounded
