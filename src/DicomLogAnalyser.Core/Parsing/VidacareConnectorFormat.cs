@@ -16,7 +16,8 @@ public sealed partial class VidacareConnectorFormat : ILogFormat
 
     public string Id => FormatId;
 
-    public string DisplayName => "VIDAcare Connector (worklist)";
+    // Provider-neutral wording: the provider appears only as a value (see Worklist.WorklistProviders).
+    public string DisplayName => "Worklist provider log (provider: VIDAcare)";
 
     [GeneratedRegex(@"^(?<y>\d{4})-(?<mo>\d{2})-(?<d>\d{2}) (?<h>\d{2}):(?<mi>\d{2}):(?<s>\d{2}),(?<f>\d{3}) \[(?<thr>[^\]\r\n]{1,100})\] (?<lvl>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL) +(?<cat>[A-Za-z_][\w.`]{0,120}) - (?<msg>.*?)(?: \|(?: [0-9  ]+)+)?$", RegexOptions.CultureInvariant | RegexOptions.ExplicitCapture, matchTimeoutMilliseconds: 250)]
     private static partial Regex Header();

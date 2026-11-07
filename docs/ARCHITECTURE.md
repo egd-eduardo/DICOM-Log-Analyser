@@ -139,7 +139,12 @@ placeholders, checked by a test) and shows the flags from `/flags/*.svg`, both e
 allow-list. `GET /api/maintenance/patterns.csv` (administrators) exports message patterns with digits, UIDs, GUIDs,
 quoted text and `SURNAME^GIVEN MIDDLE` names (up to the modality code) masked, to tune the wording rules against real logs.
 
-## Modality worklist (VIDAcare Connector)
+## Modality worklist (provider logs)
+
+The interface is provider-neutral: it speaks of "the worklist provider" and shows the provider only as a value.
+`WorklistProviders` lists the supported providers (name, log format, usual log folder); today one entry, VIDAcare, whose
+format is `VidacareConnectorFormat`. A further provider needs its log format and one entry; `WorklistAnalysis` reads
+the events of every provider format and reports the provider of each association.
 
 `VidacareConnectorFormat` reads `yyyy-MM-dd HH:mm:ss,fff [thread] LEVEL Logger - message | memory`: the thread becomes
 the component, the logger the category, and the trailing memory counter is removed; dataset dumps and association

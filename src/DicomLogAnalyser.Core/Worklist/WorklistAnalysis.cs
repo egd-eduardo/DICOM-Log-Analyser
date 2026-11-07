@@ -6,13 +6,14 @@ using Microsoft.Data.Sqlite;
 
 namespace DicomLogAnalyser.Core.Worklist;
 
-/// <summary>One DICOM association handled by the worklist connector (one connection from one piece of equipment).</summary>
+/// <summary>One DICOM association handled by the worklist provider (one connection from one piece of equipment).</summary>
 public sealed class WorklistAssociation
 {
     public required long StartTs { get; init; }
     public required bool UtcKnown { get; init; }
     public required long EventId { get; init; }
     public required string SourceLabel { get; init; }
+    public required string Provider { get; init; }
     public string? CallingAe { get; set; }
     public string? CalledAe { get; set; }
     public string? Address { get; set; }
@@ -31,7 +32,7 @@ public sealed class WorklistAssociation
     public string Outcome { get; set; } = "open";
     public bool HasDimseDetail { get; set; }
 
-    /// <summary>Opened by the connector itself (for example its own query to the PACS), not by equipment.</summary>
+    /// <summary>Opened by the provider itself (for example its own query to the PACS), not by equipment.</summary>
     public bool Outbound { get; set; }
 }
 
@@ -68,10 +69,12 @@ public sealed record WorklistReport(
     bool DimseDetail,
     IReadOnlyList<WorklistEquipment> Equipment,
     IReadOnlyList<WorklistFinding> Findings,
-    IReadOnlyList<WorklistAssociation> Recent);
+    IReadOnlyList<WorklistAssociation> Recent,
+    IReadOnlyList<string> Providers,
+    IReadOnlyList<WorklistProvider> SupportedProviders);
 
 /// <summary>
-/// Reconstructs modality worklist traffic from VIDAcare Connector logs: which equipment (calling AE title, address,
+/// Reconstructs modality worklist traffic from the logs of a worklist provider (<see cref="WorklistProviders"/>): which equipment (calling AE title, address,
 /// software) asks for the worklist, with which keys, and what is sent back, and points out AE title inconsistencies.
 /// Lines are linked to an association by its number ("MR1(1910): ...") and, for lines without it, by the thread that
 /// handles the association. Query keys and items are read from the DICOM dataset dumps written at DEBUG level.
@@ -113,13 +116,12 @@ public sealed partial class WorklistAnalysis(IndexDatabase db)
         long? toTs = null;
         using (var cmd = c.CreateCommand())
         {
-            cmd.CommandText = "SELECT max(e.sort_ts) FROM events e JOIN files f ON f.id=e.file_id WHERE f.format=$fmt" + filter;
-            cmd.Parameters.AddWithValue("$fmt", VidacareConnectorFormat.FormatId);
+            cmd.CommandText = "SELECT max(e.sort_ts) FROM events e JOIN files f ON f.id=e.file_id WHERE f.format IN (" + FormatList + ")" + filter;
             var v = cmd.ExecuteScalar();
             if (v is long l) toTs = l;
         }
 
-        if (toTs is null) return new WorklistReport(null, null, true, 0, false, false, [], [], []);
+        if (toTs is null) return new WorklistReport(null, null, true, 0, false, false, [], [], [], [], WorklistProviders.All);
         long? fromTs = hours is > 0 ? toTs.Value - (hours.Value * 3_600_000L) : null;
 
         var state = new ParseState();
@@ -130,11 +132,10 @@ public sealed partial class WorklistAnalysis(IndexDatabase db)
         {
             cmd.CommandText = """
                 SELECT e.id, e.file_id, e.sort_ts, e.utc_known, e.category, e.component, e.message,
-                       CASE WHEN e.message LIKE 'Dataset%' OR e.message LIKE 'A-ASSOCIATE-RQ%' THEN e.detail END, s.label
+                       CASE WHEN e.message LIKE 'Dataset%' OR e.message LIKE 'A-ASSOCIATE-RQ%' THEN e.detail END, s.label, f.format
                 FROM events e JOIN files f ON f.id=e.file_id JOIN sources s ON s.id=e.source_id
-                WHERE f.format=$fmt AND e.kind=0 AND e.category IN ('Association','PDUEncoder','PDUDecoder','DicomServiceRegistry','DicomWorklist')
-                """ + filter + (fromTs is null ? "" : " AND e.sort_ts >= $from") + " ORDER BY e.file_id, e.line_start LIMIT $max";
-            cmd.Parameters.AddWithValue("$fmt", VidacareConnectorFormat.FormatId);
+                WHERE f.format IN ({formats}) AND e.kind=0 AND e.category IN ('Association','PDUEncoder','PDUDecoder','DicomServiceRegistry','DicomWorklist')
+                """.Replace("{formats}", FormatList, StringComparison.Ordinal) + filter + (fromTs is null ? "" : " AND e.sort_ts >= $from") + " ORDER BY e.file_id, e.line_start LIMIT $max";
             if (fromTs is not null) cmd.Parameters.AddWithValue("$from", fromTs.Value);
             cmd.Parameters.AddWithValue("$max", MaxEvents + 1);
             using var r = cmd.ExecuteReader();
@@ -148,7 +149,8 @@ public sealed partial class WorklistAnalysis(IndexDatabase db)
 
                 if (r.GetInt64(3) == 0) utcKnown = false;
                 state.Feed(new Row(r.GetInt64(0), r.GetInt64(1), r.GetInt64(2), r.GetInt64(3) != 0, r.GetString(4),
-                    r.IsDBNull(5) ? "" : r.GetString(5), r.GetString(6), r.IsDBNull(7) ? null : r.GetString(7), r.GetString(8)));
+                    r.IsDBNull(5) ? "" : r.GetString(5), r.GetString(6), r.IsDBNull(7) ? null : r.GetString(7), r.GetString(8),
+                    WorklistProviders.ForFormat(r.IsDBNull(9) ? null : r.GetString(9))?.Name ?? "(unknown)"));
             }
         }
 
@@ -156,12 +158,17 @@ public sealed partial class WorklistAnalysis(IndexDatabase db)
         var equipment = Summarise(associations);
         var findings = Findings(associations, equipment);
         var recent = associations.OrderByDescending(a => a.StartTs).Take(MaxRecent).ToList();
-        return new WorklistReport(fromTs, toTs, utcKnown, Math.Min(events, MaxEvents), truncated, associations.Any(a => a.HasDimseDetail), equipment, findings, recent);
+        var providers = associations.Select(a => a.Provider).Distinct(StringComparer.Ordinal).Order(StringComparer.Ordinal).ToList();
+        return new WorklistReport(fromTs, toTs, utcKnown, Math.Min(events, MaxEvents), truncated, associations.Any(a => a.HasDimseDetail), equipment, findings, recent,
+            providers, WorklistProviders.All);
     }
 
-    private sealed record Row(long Id, long FileId, long Ts, bool UtcKnown, string Logger, string Thread, string Message, string? Detail, string Source);
+    private sealed record Row(long Id, long FileId, long Ts, bool UtcKnown, string Logger, string Thread, string Message, string? Detail, string Source, string Provider);
 
-    /// <summary>Follows associations through the interleaved lines of one or more connector logs.</summary>
+    /// <summary>The log formats of all supported providers, as SQL string literals (fixed identifiers, not user input).</summary>
+    private static readonly string FormatList = string.Join(',', WorklistProviders.All.Select(p => "'" + p.FormatId.Replace("'", "''", StringComparison.Ordinal) + "'"));
+
+    /// <summary>Follows associations through the interleaved lines of one or more provider logs.</summary>
     private sealed class ParseState
     {
         private readonly Dictionary<(long File, string Number), WorklistAssociation> _byNumber = [];
@@ -181,9 +188,9 @@ public sealed partial class WorklistAnalysis(IndexDatabase db)
                 var initiated = row.Message.Contains(") initiated ", StringComparison.Ordinal);
                 if (accepted.Success || initiated || !_byNumber.TryGetValue(key, out a))
                 {
-                    // A new association: "accepted" opens it (numbers restart when the connector restarts); lines such
+                    // A new association: "accepted" opens it (numbers restart when the provider's service restarts); lines such
                     // as "close socket" after the release still belong to the same one.
-                    a = new WorklistAssociation { StartTs = row.Ts, UtcKnown = row.UtcKnown, EventId = row.Id, SourceLabel = row.Source };
+                    a = new WorklistAssociation { StartTs = row.Ts, UtcKnown = row.UtcKnown, EventId = row.Id, SourceLabel = row.Source, Provider = row.Provider };
                     _byNumber[key] = a;
                     All.Add(a);
                 }
@@ -395,7 +402,7 @@ public sealed partial class WorklistAnalysis(IndexDatabase db)
             var otherLists = e.WorklistFor.Where(w => w != ae).ToList();
             if (otherLists.Count > 0)
             {
-                f.Add(new("warning", "worklist-for", $"The connector loaded another worklist for {ae}",
+                f.Add(new("warning", "worklist-for", $"The worklist provider loaded another worklist for {ae}",
                     "Worklist loaded for: " + string.Join(", ", otherLists) + ".", [ae, .. otherLists]));
             }
 
@@ -467,7 +474,7 @@ public sealed partial class WorklistAnalysis(IndexDatabase db)
         if (associations.Count > 0 && !associations.Any(a => a.HasDimseDetail))
         {
             f.Add(new("info", "no-debug", "Query keys and items are not visible",
-                "The connector logs only at INFO level here. Its DEBUG level shows the C-FIND requests, the keys and every item sent.", []));
+                "The worklist provider logs only at INFO level here. Its DEBUG level shows the C-FIND requests, the keys and every item sent.", []));
         }
 
         var order = new Dictionary<string, int> { ["error"] = 0, ["warning"] = 1, ["info"] = 2 };

@@ -12,12 +12,12 @@
   <header class="top">
     <div class="brand">DICOM Log Analyser</div>
     <nav id="tabs" aria-label="Sections">
+      <button data-tab="sources">Sources</button>
       <button data-tab="overview" class="active">Overview</button>
       <button data-tab="search">Search</button>
       <button data-tab="exam">Exam history</button>
       <button data-tab="worklist">Worklist</button>
       <button data-tab="live">Live</button>
-      <button data-tab="sources">Sources</button>
       <button data-tab="import">Import bundle</button>
       <button data-tab="maintenance">Maintenance</button>
     </nav>
@@ -95,7 +95,8 @@
 
     <section id="tab-worklist" class="panel hidden">
       <h1>Modality worklist</h1>
-      <p class="muted small">From VIDAcare Connector logs (usually the folder <code>VIDAcare\Connector\logs</code>, added under Sources): which equipment asks for the worklist (calling AE title, address, software), with which keys, how many items are sent back, and AE title inconsistencies. Query keys and items are visible when the connector logs at DEBUG level.</p>
+      <p class="muted small">From the log folder of the modality worklist provider, added under Sources: which equipment asks for the worklist (calling AE title, address, software), with which keys, how many items are sent back, and AE title inconsistencies. Query keys and items are visible when the provider logs at DEBUG level.</p>
+      <p id="wl-providers" class="muted small"></p>
       <div class="live-controls">
         <label>Period <select id="wl-hours"><option value="1">Last hour</option><option value="8">Last 8 hours</option><option value="24" selected>Last 24 hours</option><option value="168">Last 7 days</option><option value="all">Everything indexed</option></select></label>
         <label class="check"><input type="checkbox" id="wl-live" checked> Refresh every 10 seconds</label>

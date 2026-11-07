@@ -1177,13 +1177,15 @@ async function loadWorklist() {
 function renderWorklist(r) {
   const out = $('wl-out');
   out.replaceChildren();
+  // Provider-neutral: providers are named only as values, with the folder where their logs usually are.
+  $('wl-providers').textContent = 'Supported providers: ' + r.supportedProviders.map((/** @type {any} */ p) => `${p.name} (logs usually in …\\${p.folderHint})`).join(', ') + '.';
   if (r.toTs === null) {
     $('wl-status').textContent = '';
-    out.append(el('p', 'notice info', 'No VIDAcare Connector log is indexed yet. Add the folder VIDAcare\\Connector\\logs under Sources; it is recognised automatically.'));
+    out.append(el('p', 'notice info', 'No worklist provider log is indexed yet. Add the provider\'s log folder under Sources; it is recognised automatically.'));
     return;
   }
   const assoc = r.equipment.reduce((n, e) => n + e.associations, 0);
-  $('wl-status').textContent = `${r.equipment.length} AE title(s), ${num(assoc)} association(s)` + (r.fromTs !== null ? ` from ${wlTime(r.fromTs, r.utcKnown)}` : '') + ` to ${wlTime(r.toTs, r.utcKnown)} (latest indexed entry). Updated ${new Date().toLocaleTimeString()}.` + (r.truncated ? ' Only the first part of the period was analysed; choose a shorter period.' : '');
+  $('wl-status').textContent = (r.providers.length ? `Provider: ${r.providers.join(', ')}. ` : '') + `${r.equipment.length} AE title(s), ${num(assoc)} association(s)` + (r.fromTs !== null ? ` from ${wlTime(r.fromTs, r.utcKnown)}` : '') + ` to ${wlTime(r.toTs, r.utcKnown)} (latest indexed entry). Updated ${new Date().toLocaleTimeString()}.` + (r.truncated ? ' Only the first part of the period was analysed; choose a shorter period.' : '');
 
   out.append(el('h2', '', 'Findings'));
   if (r.findings.length === 0) out.append(el('p', 'ok-text', 'No inconsistency found in this period.'));
@@ -1317,7 +1319,11 @@ async function start() {
   prefillTimeZone('i-tz', 'i-tz-help');
   $('i-limit').textContent = `Maximum upload size: ${session.maxUploadMb} MB. Archives are checked for unsafe paths, links and decompression bombs before anything is kept.`;
   if (new URLSearchParams(location.search).has('expired')) notify('That sign-in link was already used or has expired. Press O in the analyser window for a new one.');
-  showTab('overview');
+  let first = 'overview';
+  if (isAdmin()) {
+    try { if ((await api('/api/sources')).length === 0) first = 'sources'; } catch { /* keep the overview */ }
+  }
+  showTab(first);
   pollScan();
 }
 
