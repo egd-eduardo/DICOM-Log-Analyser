@@ -79,7 +79,7 @@ public static class Endpoints
             return Results.Json(exams.Build(q, ids.Count > 0 ? ids : null));
         });
 
-        // Modality worklist (VIDAcare Connector logs): equipment, queries, items sent and AE title inconsistencies.
+        // Modality worklist (logs of a worklist provider): equipment, queries, items sent and AE title inconsistencies.
         api.MapGet("/worklist", (HttpContext ctx, Core.Worklist.WorklistAnalysis worklist) =>
         {
             var hoursText = ctx.Request.Query["hours"].ToString();

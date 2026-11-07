@@ -114,4 +114,38 @@ public class WorklistTests
         Assert.DoesNotContain(secret, sig, StringComparison.Ordinal);
         Assert.Contains("<name>", sig, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void Provider_is_named_only_as_a_value()
+    {
+        var r = Analyse();
+        Assert.Equal(["VIDAcare"], r.Providers);
+        Assert.Contains(r.SupportedProviders, p => p.Name == "VIDAcare" && p.FormatId == VidacareConnectorFormat.FormatId);
+        Assert.All(r.Recent, a => Assert.Equal("VIDAcare", a.Provider));
+
+        // Findings and the interface speak of "the worklist provider", never of a product.
+        foreach (var provider in WorklistProviders.All)
+        {
+            Assert.DoesNotContain(r.Findings, x => x.Title.Contains(provider.Name, StringComparison.OrdinalIgnoreCase)
+                || x.Detail.Contains(provider.Name, StringComparison.OrdinalIgnoreCase));
+            // The interface as shipped (embedded in the program).
+            foreach (var resource in new[] { "ui/index.html", "ui/app.js", "ui/exam-i18n.json" })
+            {
+                using var stream = typeof(DicomLogAnalyser.Web.EmbeddedUi).Assembly.GetManifestResourceStream(resource)!;
+                using var reader = new StreamReader(stream);
+                Assert.DoesNotContain(provider.Name, reader.ReadToEnd(), StringComparison.OrdinalIgnoreCase);
+            }
+        }
+
+        Assert.StartsWith("Worklist provider log", new VidacareConnectorFormat().DisplayName, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Empty_index_still_lists_the_supported_providers()
+    {
+        using var f = new IndexFixture();
+        var r = new WorklistAnalysis(f.Db).Analyse(null, 24);
+        Assert.Empty(r.Providers);
+        Assert.NotEmpty(r.SupportedProviders);
+    }
 }

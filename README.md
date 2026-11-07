@@ -46,8 +46,9 @@
   before the first receipt is pointed out, since the study may then predate the indexed days. The recognition follows
   the B3DWEB Gateway wording (`Receiving`, `Adding upload job`, `Beg/End upload`, `C-STORE-RQ … Dest AET`).
   Administrators can export masked **message patterns** (Maintenance) to help tune the recognition.
-* **Modality worklist** (Worklist tab), from **VIDAcare Connector** logs (log4net layout, usually in
-  `VIDAcare\Connector\logs`; detected automatically). For each piece of equipment (calling AE title) it shows the
+* **Modality worklist** (Worklist tab), from the logs of the **worklist provider** (add its log folder under Sources;
+  detected automatically). The provider is shown as a value; supported providers: VIDAcare (logs usually in
+  `…\Connector\logs`). Further providers are added as a log format plus one entry in `WorklistProviders`. For each piece of equipment (calling AE title) it shows the
   addresses, the software it reports, the called AE, associations, connection tests (C-ECHO), queries, items sent and
   empty answers, the query keys (modality, Scheduled Station AE Title) and the Scheduled Station AE Title of the items
   sent; then the recent associations, each opening its original lines. It points out AE title inconsistencies:
@@ -55,7 +56,7 @@
   another AE, one AE title used from several addresses, one address using several AE titles, a called AE differing from
   the usual one, different software under one title, invalid or generic default titles, a title suggesting another
   vendor than the reported software, and failed associations. With live indexing it refreshes every 10 seconds. Query
-  keys and items need the connector's DEBUG logging; the connector's own outgoing queries are left out.
+  keys and items need the provider's DEBUG logging; the provider's own outgoing queries are left out.
 * Overview: event, error and warning counts, per-source coverage, errors per day, categories/components, most
   frequent error patterns (identifiers masked) and files with read or parse problems.
 * Secure import of log bundles (.zip, .gz, .log, .txt) from computers the analyser cannot reach.
@@ -158,6 +159,8 @@ every change. Details: [docs/SECURITY.md](docs/SECURITY.md).
 ---
 
 ## Adding sources
+
+**Sources** is the first tab: start there. While no folder has been added, the program opens on it.
 
 A **source is one folder with log files**: add one for each folder you want to analyse (for example the Gateway folder
 and the DICOM Router folder of each site); all sources are searched together. Open **Sources**, choose **Browse…** (or
