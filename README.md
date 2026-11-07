@@ -427,19 +427,44 @@ index; that is not implemented in this version.
 
 ## Build from source
 
-```bash
-./scripts/check.sh                  # secret/PHI scan, format, build, tests, vulnerability audit, UI type check
-```
+Builds run on your own Mac or Windows computer, without GitHub. Install the **.NET 10 SDK** first
+(https://dotnet.microsoft.com/download/dotnet/10.0), then open a terminal in the repository folder.
+
+**On a Mac** (Terminal):
 
 ```bash
-./scripts/package.sh win-x64        # also: win-arm64, osx-arm64, osx-x64, linux-x64, linux-arm64
+./scripts/build.sh
 ```
+
+This runs the tests and builds the package for this Mac into `artifacts/package/` (for example
+`DicomLogAnalyser-osx-arm64.zip`). Unzip it and open `start.command`. A package built on your own Mac is not
+quarantined, so the `xattr` step that a download needs is not necessary. Options: `--all` builds every release package
+(Windows, macOS, Linux) with `SHA256SUMS.txt` into `artifacts/release/`; `--skip-tests` packages only; `--checks` runs
+the full checks first.
+
+**On Windows** (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\build.ps1
+```
+
+This runs the tests and builds `artifacts\package\DicomLogAnalyser-win-x64.zip` (or `-win-arm64`). Extract it and
+double-click **Start DICOM Log Analyser.cmd**. Options: `-All`, `-SkipTests`, `-Checks`. Build macOS packages on a Mac:
+zip files made on Windows do not keep the executable mark the macOS program needs.
+
+**Full checks** (the same as CI: secret and PHI scan, format, build, tests, vulnerability audit, UI type check; needs
+Node.js 22 and Python 3 as well):
 
 ```bash
-./scripts/release.sh                # all release packages and SHA256SUMS.txt into artifacts/release/
+./scripts/check.sh
 ```
 
-Requires the .NET 10 SDK (see `global.json`), Node.js 22 (UI type check only) and Python 3 (secret scan).
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\check.ps1
+```
+
+Single packages for any platform: `./scripts/package.sh <rid>` or `scripts\package.ps1 -Runtime <rid>` with `win-x64`,
+`win-arm64`, `osx-arm64`, `osx-x64`, `linux-x64` or `linux-arm64`.
 
 ## Licence
 

@@ -101,6 +101,24 @@ jobs:
         env:
           DOTNET_SYSTEM_GLOBALIZATION_USENLS: "true"
         run: dotnet test DicomLogAnalyser.slnx -c Release --no-build --filter "FullyQualifiedName~TimeZone"
+      - name: PowerShell scripts parse without errors
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $bad = 0
+          foreach ($f in Get-ChildItem scripts -Filter *.ps1) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { $bad++; $errors | ForEach-Object { Write-Host "$($f.Name): $($_.Message)" } }
+          }
+          if ($bad) { throw "$bad script(s) with syntax errors" }
+      - name: Local build script (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/build.ps1 -SkipTests
+      - name: Local build script (macOS)
+        if: runner.os == 'macOS'
+        run: ./scripts/build.sh --skip-tests
       - name: Publish self-contained single file
         run: dotnet publish src/DicomLogAnalyser.Web -c Release -r ${{ matrix.rid }} -o publish
       - name: Start, check loopback-only listener and authentication, stop
