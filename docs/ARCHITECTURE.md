@@ -108,6 +108,16 @@ volume, against about 3 times before) and the first scan slower; see the measure
 * Each response includes per-level counts and **coverage notes** computed from source state, so the UI can state
   whether "no result" might be caused by a gap rather than by absence of the event.
 
+## Find in files
+
+* `GET /api/find?q=&sources=` streams the chosen files of each enabled source (bundle files too) through `LineReader`
+  (UTF-8 with Latin-1 fallback), without the index and without the read pacer: the user is waiting.
+* Matching folds every character through a 65 536-entry table (`TextFolding`: lower case, accents removed through
+  Unicode decomposition, plus đ, ı, ø, ł, ħ), so it runs at plain-text speed; the browser folds the same way to mark
+  the terms. Terms are parsed as in Search (all must match, quotes, `-` exclusion).
+* Limits: 500 matching lines (the last ones still get their lines after), 60 seconds, two searches at a time (429
+  otherwise), cancelled when the browser disconnects. Lines over 4 000 characters are shortened for display.
+
 ## Exam history
 
 `ExamHistoryService` (Core, `Exam/ExamHistory.cs`) builds the history of one exam from the index, with the definitions

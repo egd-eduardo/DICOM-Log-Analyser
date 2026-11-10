@@ -102,6 +102,9 @@ no translation service or external image is used.
 * **Live view:** `/api/tail` opens only files chosen for analysis in that source (or a bundle's files), after resolving
   the path inside the source folder and refusing links; any other name returns 403. Files are opened read-only with
   sharing. Viewers may use it, as it shows the same files their searches cover.
+* **Find in files:** `/api/find` reads only the same files as the live view (chosen files, bundle files), each resolved
+  inside its source folder and refused when it is a link; files are opened read-only with sharing. The search text is
+  neither logged nor audited; results go only to the requesting browser. Two concurrent searches at most, 60 seconds each.
 * **Fresh session:** administrator-only, explicitly confirmed; runs in the background queue (never during a scan),
   deletes events, file state, optional bundles and sources, temporary files and in-memory caches, then compacts the
   database (VACUUM, WAL truncated). A test confirms that an indexed identifier no longer occurs in the raw bytes of the

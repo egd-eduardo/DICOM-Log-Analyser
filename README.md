@@ -223,12 +223,27 @@ Notes:
 * **Encoding:** UTF-8 by default (with or without byte order mark); a line that is not valid UTF-8 is read as
   Windows Latin-1, so accented characters from older tools still display.
 
+## Find in files (no index needed)
+
+* **Find in files** on the Search tab reads the chosen log files directly, line by line, like *Find in Files* in
+  Notepad++ or another text editor. It does not wait for indexing, so it also finds lines in files that are still being
+  indexed or whose format is not recognised. About 100 MB is read in well under a second on a local disk; network shares
+  take longer.
+* Upper/lower case and accents are ignored (`associacao` finds `Associação`, `ecole` finds `ÉCOLE`). Several words must
+  all appear on the same line; `"quotes"` keep a phrase with spaces; `-word` excludes lines containing the word.
+* Each matching line is shown with its file, line number and two lines before and after; **Copy line** copies it. At
+  most 500 lines are shown and a search stops after one minute; the summary says when either happens. The Source filter
+  applies; other filters (level, category, time) are for the indexed Search only.
+* Only files chosen for analysis (Sources, *Choose files*) and imported bundle files are read, read-only, with the same
+  path and link checks as the live view. The search text is not recorded anywhere.
+* While indexing runs, the Search tab says so, so that an empty indexed search is not mistaken for "not in the logs".
+
 ### Why there is an index (and nothing to install)
 
 The live view reads files directly. Search, filters, the overview and the links back to original lines use a local
 index: a single SQLite file in the data folder, built into the program. There is no database server, service, account
 or password to manage. Without an index each search would re-read every chosen file (seconds instead of milliseconds)
-and the overview would not be possible.
+and the overview would not be possible; *Find in files* is the direct alternative when the index is not ready.
 
 ## Importing a bundle from an unreachable computer
 
