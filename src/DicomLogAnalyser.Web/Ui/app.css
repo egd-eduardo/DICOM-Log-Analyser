@@ -168,3 +168,11 @@ tr.clickable:hover, tr.clickable:focus { background: var(--panel-2); }
 .finding-warning { border-left-color: var(--warn); }
 .finding-error { border-left-color: var(--danger); }
 .finding .small { margin-top: 2px; }
+
+/* Find in files */
+.find-results h3.find-file { font-size: 0.95rem; margin: 18px 0 6px; overflow-wrap: anywhere; }
+.find-hit { position: relative; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); margin: 0 0 8px; }
+.find-hit > button { position: absolute; top: 4px; right: 4px; font-size: 0.8rem; padding: 2px 8px; }
+.find-lines { margin: 0; padding: 30px 10px 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.82rem; line-height: 1.4; }
+.find-lines .ctx { color: var(--muted); }
+.find-lines .hitline { font-weight: 600; }

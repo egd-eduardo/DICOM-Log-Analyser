@@ -402,7 +402,7 @@ async function runSearch(append) {
   const res = await api('/api/search?' + params.toString());
   highlightRegex = buildHighlight($('q').value);
   const tbody = $('results').querySelector('tbody');
-  if (!append) tbody.replaceChildren();
+  if (!append) { tbody.replaceChildren(); $('find-results').replaceChildren(); $('results').classList.remove('hidden'); }
   for (const e of res.items) tbody.append(resultRow(e));
   nextCursor = res.nextCursor;
   $('more').classList.toggle('hidden', !nextCursor);
@@ -411,6 +411,155 @@ async function runSearch(append) {
   exp.href = '/api/export.csv?' + params.toString();
   exp.classList.toggle('hidden', res.matchCount === 0 || !isAdmin());
   if (!append) renderSummary(res, params.has('q'));
+}
+
+// ---------- Find in files (direct search in the chosen files, without the index) ----------
+
+/** Characters that do not decompose in Unicode but read as accented letters; mirrors the server's folding. */
+const FOLD_EXTRA = /** @type {Record<string, string>} */ ({ 'đ': 'd', 'Đ': 'd', 'ı': 'i', 'ø': 'o', 'Ø': 'o', 'ł': 'l', 'Ł': 'l', 'ħ': 'h', 'Ħ': 'h' });
+
+/** Folds text to lower-case base letters, one character for one character, so positions stay aligned. @param {string} text */
+function foldText(text) {
+  let out = '';
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const code = c.charCodeAt(0);
+    if (code < 128) { out += c.toLowerCase(); continue; }
+    if (code >= 0xd800 && code <= 0xdfff) { out += c; continue; }
+    if (FOLD_EXTRA[c]) { out += FOLD_EXTRA[c]; continue; }
+    const d = c.normalize('NFD');
+    const base = [...d].find((x) => !/\p{Mn}/u.test(x)) ?? d[0];
+    const lower = base.toLowerCase();
+    out += lower.length === 1 ? lower : base;
+  }
+  return out;
+}
+
+/** Appends text, marking every occurrence of the (already folded) terms, ignoring case and accents. @param {HTMLElement} node @param {string} text @param {string[]} terms */
+function appendFolded(node, text, terms) {
+  if (!terms.length || !text) { node.append(text ?? ''); return; }
+  const folded = foldText(text);
+  /** @type {boolean[]} */
+  const marked = new Array(text.length).fill(false);
+  for (const t of terms) {
+    if (!t) continue;
+    let i = folded.indexOf(t);
+    let guard = 0;
+    while (i >= 0 && guard++ < 2000) { for (let k = i; k < i + t.length; k++) marked[k] = true; i = folded.indexOf(t, i + t.length); }
+  }
+  let i = 0;
+  while (i < text.length) {
+    let j = i;
+    while (j < text.length && marked[j] === marked[i]) j++;
+    if (marked[i]) node.append(el('mark', '', text.slice(i, j))); else node.append(text.slice(i, j));
+    i = j;
+  }
+}
+
+/** @param {string} text */
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    // Not a secure context (for example http on another computer): fall back to a hidden text area.
+    const ta = el('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.position = 'fixed'; ta.style.opacity = '0';
+    document.body.append(ta); ta.select();
+    document.execCommand('copy');
+    ta.remove();
+  }
+  notify('Copied to the clipboard.', true);
+}
+
+let findRunning = false;
+async function runFind() {
+  const q = $('q').value.trim();
+  if (!q) { notify('Enter the text to find.'); return; }
+  if (findRunning) return;
+  findRunning = true;
+  const btn = $('q-find');
+  btn.disabled = true;
+  const box = $('find-results');
+  $('results').querySelector('tbody').replaceChildren();
+  $('results').classList.add('hidden');
+  $('more').classList.add('hidden'); $('export').classList.add('hidden');
+  $('search-summary').replaceChildren(el('div', 'summary', 'Reading the chosen log files… This usually takes seconds; very large files or slow network shares take longer (at most one minute).'));
+  box.replaceChildren();
+  try {
+    const p = new URLSearchParams({ q });
+    if ($('f-source').value) p.set('sources', $('f-source').value);
+    const res = await api('/api/find?' + p.toString());
+    renderFind(res);
+  } finally {
+    findRunning = false;
+    btn.disabled = false;
+  }
+}
+
+/** @param {any} res */
+function renderFind(res) {
+  const summary = $('search-summary');
+  const div = el('div', 'summary');
+  const n = res.hits.length;
+  const read = `${num(res.filesSearched)} file(s), ${bytes(res.bytesRead)} read in ${res.seconds} s`;
+  if (n === 0) {
+    div.classList.add('none');
+    div.append(el('p', '', `No line contains the search text in the chosen log files (${read}).`));
+    div.append(el('p', 'muted', 'Only the files chosen for analysis are read (Sources, "Choose files"), and imported bundles. Check that the right files are chosen and that the text is spelt as in the log.'));
+  } else {
+    div.classList.add('good');
+    div.append(el('p', '', `${res.truncated ? 'The first ' : ''}${num(n)} matching line(s) (${read}).`));
+  }
+  if (res.truncated) div.append(el('p', 'warn-text small', `Only the first ${num(res.maxHits)} lines are shown. Add words to narrow the search.`));
+  if (res.timedOut) div.append(el('p', 'warn-text small', 'The search stopped after one minute, so not every file was read completely. Choose fewer files or narrow the Source filter.'));
+  if (res.unreadable?.length) div.append(el('p', 'warn-text small', `${res.unreadable.length} file(s) could not be read (removed, locked or the share is offline): ` + res.unreadable.slice(0, 5).join(', ') + (res.unreadable.length > 5 ? ', …' : '')));
+  summary.replaceChildren(div);
+
+  const box = $('find-results');
+  box.replaceChildren();
+  /** @type {string[]} */
+  const terms = res.terms || [];
+  let lastFile = '';
+  for (const h of res.hits) {
+    const key = h.sourceId + '\n' + h.file;
+    if (key !== lastFile) {
+      lastFile = key;
+      box.append(el('h3', 'find-file', `${h.source}: ${h.file}`));
+    }
+    const hit = el('div', 'find-hit');
+    const pre = el('pre', 'find-lines');
+    let ln = h.line - h.before.length;
+    for (const t of h.before) pre.append(el('span', 'ctx', `${String(ln++).padStart(7)}  ${t}\n`));
+    const main = el('span', 'hitline');
+    main.append(`${String(h.line).padStart(7)}  `);
+    appendFolded(main, h.text, terms);
+    main.append('\n');
+    pre.append(main);
+    ln = h.line + 1;
+    for (const t of h.after) pre.append(el('span', 'ctx', `${String(ln++).padStart(7)}  ${t}\n`));
+    const copy = el('button', 'ghost small', 'Copy line');
+    copy.type = 'button';
+    copy.title = 'Copy the matching line to the clipboard';
+    copy.addEventListener('click', () => copyText(h.text).catch(() => notify('Copying is not available in this browser; select the text instead.')));
+    hit.append(copy, pre);
+    box.append(hit);
+  }
+}
+
+/** Shows, on the Search tab, whether indexing is still running, so an empty indexed search is not mistaken for "nothing found". @param {any} s */
+function renderIndexState(s) {
+  const p = $('index-state');
+  if (!p) return;
+  if (s && s.state === 'running' && s.operation !== 'Live update') {
+    p.textContent = `Indexing is still running (${num(s.filesDone)} of ${num(s.filesTotal)} files${s.queued ? ', ' + s.queued + ' more queued' : ''}): Search shows only what is indexed so far. Find in files reads the files directly and does not wait.`;
+    p.className = 'small warn-text';
+  } else if (s && s.queued > 0) {
+    p.textContent = `${s.queued} scan(s) are waiting to start: Search shows only what is indexed so far. Find in files reads the files directly.`;
+    p.className = 'small warn-text';
+  } else {
+    p.className = 'small hidden';
+    p.textContent = '';
+  }
 }
 
 /** @param {any} e */
@@ -445,6 +594,14 @@ function renderSummary(res, hasText) {
     div.classList.add('none');
     div.append(el('p', '', 'No matching event found in the indexed logs.'));
     div.append(el('p', 'muted', 'This does not mean that a transfer failed, nor that it succeeded. The events may be in a source that is not configured, disabled, unreachable or not yet scanned, outside the indexed period, or in a log whose times are in another time zone.'));
+    if (hasText) {
+      const p = el('p', 'small', 'To look in the chosen log files themselves, whether or not they are indexed yet: ');
+      const b = el('button', 'ghost', 'Find in files');
+      b.type = 'button';
+      b.addEventListener('click', () => runFind().catch((e) => notify(e.message)));
+      p.append(b);
+      div.append(p);
+    }
   } else {
     const countText = (res.matchCountCapped ? 'More than ' : '') + num(total) + ' matching event(s)';
     if (errors > 0) {
@@ -856,6 +1013,7 @@ async function pollScan() {
   if (document.hidden) { pollTimer = window.setTimeout(pollScan, 30000); return; }
   try {
     const s = await api('/api/scan/status');
+    renderIndexState(s);
     const bar = $('scanbar');
     if (s.state === 'running' && s.operation !== 'Live update') {
       bar.classList.remove('hidden');
@@ -1233,6 +1391,7 @@ async function start() {
     if (!$('tab-worklist').classList.contains('hidden') && $('wl-live').checked) loadWorklist().catch((e) => notify(e.message));
   });
   $('exam-form').addEventListener('submit', (/** @type {Event} */ ev) => { ev.preventDefault(); runExam(undefined).catch((e) => notify(e.message)); });
+  $('q-find').addEventListener('click', () => runFind().catch((e) => notify(e.message)));
   $('q-exam').addEventListener('click', () => { const q = $('q').value.trim(); showTab('exam'); if (q) runExam(q).catch((e) => notify(e.message)); });
   $('d-close').addEventListener('click', () => $('detail').close());
   for (const id of ['d-prev', 'd-next']) $(id).addEventListener('click', () => { const v = Number($(id).dataset.id); if (v) openEvent(v).catch((e) => notify(e.message)); });

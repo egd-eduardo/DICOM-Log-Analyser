@@ -7,6 +7,7 @@ using DicomLogAnalyser.Core.IO;
 using DicomLogAnalyser.Core.Indexing;
 using DicomLogAnalyser.Core.Model;
 using DicomLogAnalyser.Core.Parsing;
+using DicomLogAnalyser.Core.Search;
 using DicomLogAnalyser.Core.Sources;
 using DicomLogAnalyser.Core.Storage;
 using DicomLogAnalyser.Web.Security;
@@ -120,6 +121,50 @@ public static class Endpoints
         {
             var (request, error) = ParseSearch(ctx.Request.Query);
             return error is not null ? Bad(error) : Results.Json(search.Search(request!));
+        });
+
+        // Find in files: reads the chosen files directly, line by line, without the index (like "Find in Files" in a text
+        // editor), so results do not wait for indexing. Case- and accent-insensitive. The search text is not logged.
+        api.MapGet("/find", (HttpContext ctx, SourceRepository repo) =>
+        {
+            var q = ctx.Request.Query;
+            var text = q["q"].ToString();
+            if (text.Length > 500) return Bad("The search text is too long.");
+            if (FileFinder.Parse(text).Include.Count == 0) return Bad("Enter the text to find.");
+            var ids = new HashSet<long>();
+            foreach (var part in q["sources"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!long.TryParse(part, NumberStyles.None, CultureInfo.InvariantCulture, out var id) || ids.Count >= 100) return Bad("Invalid source list.");
+                ids.Add(id);
+            }
+
+            if (!FindGate.Wait(0))
+                return Results.Json(new { error = "busy", message = "Another file search is running. Try again in a moment." }, statusCode: StatusCodes.Status429TooManyRequests);
+            try
+            {
+                var (targets, unreachable) = FindTargets(repo.List().Where(s => s.Enabled && (ids.Count == 0 || ids.Contains(s.Id))));
+                var result = FileFinder.Find(targets, text, FileFinder.DefaultMaxHits, FindTimeLimit, ctx.RequestAborted);
+                return Results.Json(new
+                {
+                    hits = result.Hits.Select(h => new { sourceId = h.SourceId, source = h.SourceLabel, file = h.File, line = h.Line, text = h.Text, before = h.Before, after = h.After }),
+                    filesSearched = result.FilesSearched,
+                    bytesRead = result.BytesRead,
+                    truncated = result.Truncated,
+                    timedOut = result.TimedOut,
+                    seconds = Math.Round(result.Seconds, 2),
+                    unreadable = result.Unreadable.Concat(unreachable),
+                    terms = result.Terms,
+                    maxHits = FileFinder.DefaultMaxHits,
+                });
+            }
+            catch (OperationCanceledException)
+            {
+                return Results.Empty;
+            }
+            finally
+            {
+                FindGate.Release();
+            }
         });
 
         api.MapGet("/events/{id:long}", (long id, SearchService search) => search.Get(id) is { } e ? Results.Json(e) : Results.NotFound(new { error = "not_found" }));
@@ -483,6 +528,51 @@ public static class Endpoints
                 ? Results.Accepted(value: new { queued = true })
                 : Results.Json(new { error = "busy" }, statusCode: StatusCodes.Status503ServiceUnavailable);
         });
+    }
+
+    private static readonly SemaphoreSlim FindGate = new(2, 2);
+    private static readonly TimeSpan FindTimeLimit = TimeSpan.FromSeconds(60);
+
+    /// <summary>
+    /// The files "Find in files" may read: the same files as the live view (chosen files of folders, bundle files), each
+    /// checked to lie inside its source folder and not to be a link.
+    /// </summary>
+    internal static (List<FindTarget> Targets, List<string> Unreachable) FindTargets(IEnumerable<SourceDefinition> sources)
+    {
+        var targets = new List<FindTarget>();
+        var unreachable = new List<string>();
+        foreach (var source in sources)
+        {
+            List<CandidateFile> files;
+            try
+            {
+                files = TailFiles(source);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                unreachable.Add(source.Label + ": (folder not reachable)");
+                continue;
+            }
+
+            foreach (var f in files.OrderBy(f => f.RelPath, StringComparer.Ordinal))
+            {
+                var full = Path.GetFullPath(Path.Combine(source.Path, f.RelPath.Replace('/', Path.DirectorySeparatorChar)));
+                if (!PathValidator.IsSameOrInside(full, source.Path)) continue;
+                try
+                {
+                    if (new FileInfo(full).LinkTarget is not null) continue;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    unreachable.Add(source.Label + ": " + f.RelPath);
+                    continue;
+                }
+
+                targets.Add(new FindTarget(source.Id, source.Label, f.RelPath, full));
+            }
+        }
+
+        return (targets, unreachable);
     }
 
     /// <summary>Files that may be viewed live: the chosen files of a folder (default choice if none saved), or a bundle's files.</summary>

@@ -131,6 +131,45 @@ public sealed class LiveHostTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Find_in_files_reads_only_chosen_files_without_the_index()
+    {
+        var (id, dir) = AddFolder("a.log", "b.log");
+        _app.Services.GetRequiredService<SourceRepository>().SetSelection(id, ["a.log"], ["a.log", "b.log"]);
+        File.AppendAllText(Path.Combine(dir, "a.log"), "INF 2026.11.03 10:00:01 SCP - accessionNumber=ACC000777 Associação\n");
+        File.AppendAllText(Path.Combine(dir, "b.log"), "INF 2026.11.03 10:00:01 SCP - accessionNumber=ACC000777 unchosen\n");
+
+        using (var res = await Get($"/api/find?q=acc000777+associacao&sources={id}"))
+        {
+            Assert.Equal(HttpStatusCode.OK, res.StatusCode);
+            var body = await res.Content.ReadFromJsonAsync<JsonElement>();
+            var hit = Assert.Single(body.GetProperty("hits").EnumerateArray());
+            Assert.Equal("a.log", hit.GetProperty("file").GetString());
+            Assert.Equal(2, hit.GetProperty("line").GetInt64());
+            Assert.Single(hit.GetProperty("before").EnumerateArray());
+            Assert.Equal(1, body.GetProperty("filesSearched").GetInt32());
+        }
+
+        using (var none = await Get("/api/find?q=ACC000777+unchosen"))
+            Assert.Empty((await none.Content.ReadFromJsonAsync<JsonElement>()).GetProperty("hits").EnumerateArray());
+
+        foreach (var bad in new[] { "/api/find?q=", "/api/find?q=%20%20", "/api/find?q=x&sources=abc", "/api/find?q=" + new string('x', 501) })
+        {
+            using var res = await Get(bad);
+            Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        }
+    }
+
+    [Fact]
+    public void Find_targets_skip_files_outside_the_source_folder()
+    {
+        var (id, _) = AddFolder("a.log");
+        var source = _app.Services.GetRequiredService<SourceRepository>().Get(id)! with { SelectedFiles = ["a.log", "../outside.log"] };
+        File.WriteAllText(Path.Combine(_temp.Path, "outside.log"), "x\n");
+        var (targets, _) = DicomLogAnalyser.Web.Api.Endpoints.FindTargets([source]);
+        Assert.Equal(["a.log"], targets.Select(t => t.RelPath));
+    }
+
+    [Fact]
     public async Task Growing_chosen_file_is_indexed_without_a_manual_scan()
     {
         var (id, dir) = AddFolder("live.log");
