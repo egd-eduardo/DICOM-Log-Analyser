@@ -103,30 +103,49 @@ public sealed class ActivityService(IndexDatabase db)
     private const long Hour = 60 * Minute;
     private const long Day = 24 * Hour;
     public const int MaxBuckets = 100;
+    public const int MaxAets = 50;
+
+    private static bool Matches(Regex matcher, string message)
+    {
+        try
+        {
+            return matcher.IsMatch(message);
+        }
+        catch (RegexMatchTimeoutException)
+        {
+            return false;
+        }
+    }
 
     private readonly Lock _lock = new();
-    private readonly Dictionary<(int?, long?), (long Version, Activity Value)> _cache = [];
+    private readonly Dictionary<(int?, long?, string), (long Version, Activity Value)> _cache = [];
 
-    public Activity Build(int? hours, long? sourceId)
+    /// <summary>
+    /// Builds the chart. With <paramref name="aets"/>, only lines naming one of those AE titles (as a whole word) are
+    /// counted, and silent periods are not reported, as a quiet modality is not a logging gap.
+    /// </summary>
+    public Activity Build(int? hours, long? sourceId, IReadOnlyCollection<string>? aets = null)
     {
+        if (aets is { Count: > MaxAets } || aets?.Any(a => !EquipmentService.IsValidAet(a)) == true) throw new ArgumentException("Invalid AE title list.", nameof(aets));
+        var aetKey = aets is { Count: > 0 } ? string.Join(',', aets.Order(StringComparer.OrdinalIgnoreCase)) : "";
         if (hours is < 1 or > 24 * 366) throw new ArgumentOutOfRangeException(nameof(hours));
         var version = db.DataVersion;
         lock (_lock)
         {
-            if (_cache.TryGetValue((hours, sourceId), out var cached) && cached.Version == version) return cached.Value;
+            if (_cache.TryGetValue((hours, sourceId, aetKey), out var cached) && cached.Version == version) return cached.Value;
         }
 
-        var value = Compute(hours, sourceId);
+        var value = Compute(hours, sourceId, aets is { Count: > 0 } ? aets : null);
         lock (_lock)
         {
             if (_cache.Count > 32) _cache.Clear();
-            _cache[(hours, sourceId)] = (version, value);
+            _cache[(hours, sourceId, aetKey)] = (version, value);
         }
 
         return value;
     }
 
-    private Activity Compute(int? hours, long? sourceId)
+    private Activity Compute(int? hours, long? sourceId, IReadOnlyCollection<string>? aets)
     {
         var clock = Stopwatch.StartNew();
         using var c = db.Open();
@@ -162,13 +181,29 @@ public sealed class ActivityService(IndexDatabase db)
         var from = firstSlot * size;
         var to = (lastSlot + 1) * size;
 
+        var matcher = aets is null ? null : EquipmentService.AetMatcher(aets);
         var events = new long[count];
         var errors = new long[count];
         var warnings = new long[count];
         var kinds = new long[6, count];
         using (var cmd = c.CreateCommand())
         {
-            cmd.CommandText = "SELECT ts, level, kind, substr(message,1,400) FROM events WHERE sort_ts >= $from AND sort_ts < $to AND ts IS NOT NULL" + filter;
+            var aetFilter = "";
+            if (aets is not null)
+            {
+                // LIKE (case-insensitive for ASCII) narrows the rows; the whole-word check below decides.
+                var parts = new List<string>();
+                var k = 0;
+                foreach (var aet in aets)
+                {
+                    parts.Add($"message LIKE $a{k} ESCAPE '\\'");
+                    cmd.Parameters.AddWithValue($"$a{k++}", FtsQuery.LikePattern(aet));
+                }
+
+                aetFilter = " AND (" + string.Join(" OR ", parts) + ")";
+            }
+
+            cmd.CommandText = $"SELECT ts, level, kind, substr(message,1,{(aets is null ? 400 : 2000)}) FROM events WHERE sort_ts >= $from AND sort_ts < $to AND ts IS NOT NULL" + filter + aetFilter;
             cmd.Parameters.AddWithValue("$from", from);
             cmd.Parameters.AddWithValue("$to", to);
             if (sourceId is { } s) cmd.Parameters.AddWithValue("$s", s);
@@ -177,6 +212,7 @@ public sealed class ActivityService(IndexDatabase db)
             {
                 var ts = r.GetInt64(0);
                 if (ts < from || ts >= to) continue;
+                if (matcher is not null && !Matches(matcher, r.GetString(3))) continue;
                 var i = (int)((ts / size) - firstSlot);
                 events[i]++;
                 var level = (EventLevel)r.GetInt32(1);
@@ -198,7 +234,7 @@ public sealed class ActivityService(IndexDatabase db)
 
         var totals = new ActivityTotals(buckets.Sum(b => b.Events), buckets.Sum(b => b.Errors), buckets.Sum(b => b.Warnings), buckets.Sum(b => b.Received),
             buckets.Sum(b => b.Sent), buckets.Sum(b => b.Queries), buckets.Sum(b => b.Retrieves), buckets.Sum(b => b.Associations));
-        return new Activity(from, to, size, buckets, totals, SilentPeriods(buckets, size, first.Value), localTimes, clock.Elapsed.TotalSeconds);
+        return new Activity(from, to, size, buckets, totals, aets is null ? SilentPeriods(buckets, size, first.Value) : [], localTimes, clock.Elapsed.TotalSeconds);
     }
 
     /// <summary>Runs of empty slots lasting at least an hour, after the first logged event and before the last.</summary>

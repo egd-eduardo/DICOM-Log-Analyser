@@ -237,7 +237,13 @@ Notes:
   gap, or files not chosen for analysis. The last slot, which the logs end inside, is drawn dashed.
 * Point at the chart (or focus it and use the arrow keys) for every number of a slot; click it (or press Enter) to open
   that slot's events in Search. Each series can be hidden from the legend; **Show as table** lists every slot.
-* Computed on this computer from the index (about 1.3 s per million events, then cached until new lines are indexed).
+* **Equipment filter:** lists every modality the logs name together with its AE title, such as `Mod US, PHILLIS4`
+  (grouped by modality, with the number of lines, its IP addresses and when it was last seen). Choose one AE title, or
+  all AE titles of a modality, to chart only the lines that name them. Lines that do not name the AE title, often the
+  onward sends to the PACS, are then not counted, and silent periods are not checked in that view. The Search tab has
+  the same filter (one AE title at a time), and a chart slot opens in Search with it applied.
+* Computed on this computer from the index (about 1.3 s per million events for the chart and 1.5 s for the equipment
+  list, then cached until new lines are indexed).
 
 ## Find in files (no index needed)
 

@@ -121,6 +121,16 @@ volume, against about 3 times before) and the first scan slower; see the measure
 * Results are cached per period and source until the index changes (`DataVersion`). Measured: 955 000 events in 1.3 s,
   4 ms from the cache.
 
+## Equipment (modality and AE title)
+
+* `GET /api/equipment` (`EquipmentService`) scans parsed events whose message contains `Mod`/`Modality` and reads
+  `Mod <code>, <AE title> [IP]`. Only DICOM modality codes (0008,0060 defined terms) and AE titles of 1 to 16 characters
+  with at least one letter are accepted. Per AE title: modalities with line counts, up to 5 addresses, first and last
+  time. Cached until the index changes.
+* `/api/activity?aet=A,B` (up to 50) keeps only events naming one of the AE titles as a whole word (case-insensitive),
+  pre-filtered with escaped `LIKE`. `/api/search?aet=A` adds the AE title as one more required quoted term. AE titles
+  are validated: printable, no backslash, comma or double quote.
+
 ## Find in files
 
 * `GET /api/find?q=&sources=` streams the chosen files of each enabled source (bundle files too) through `LineReader`

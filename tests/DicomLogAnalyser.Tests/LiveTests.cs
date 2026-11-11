@@ -171,7 +171,12 @@ public sealed class LiveHostTests : IAsyncLifetime
             Assert.Equal(JsonValueKind.Object, body.GetProperty("totals").ValueKind);
         }
 
-        foreach (var bad in new[] { "/api/activity?hours=0", "/api/activity?hours=-1", "/api/activity?hours=x", "/api/activity?hours=99999", "/api/activity?source=abc" })
+        using (var eq = await Get("/api/equipment"))
+            Assert.Equal(JsonValueKind.Array, (await eq.Content.ReadFromJsonAsync<JsonElement>()).ValueKind);
+        using (var filtered = await Get("/api/activity?hours=all&aet=PHILLIS4,TESTMOD01"))
+            Assert.Equal(HttpStatusCode.OK, filtered.StatusCode);
+
+        foreach (var bad in new[] { "/api/activity?aet=" + new string('A', 17), "/api/activity?aet=A%5CB", "/api/activity?hours=0", "/api/activity?hours=-1", "/api/activity?hours=x", "/api/activity?hours=99999", "/api/activity?source=abc" })
         {
             using var res = await Get(bad);
             Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);

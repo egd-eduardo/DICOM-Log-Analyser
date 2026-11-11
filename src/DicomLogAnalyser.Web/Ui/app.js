@@ -234,7 +234,7 @@ const when = (iso) => (iso ? iso.replace('T', ' ').slice(0, 19) + ' UTC' : 'neve
 
 const loaders = /** @type {Record<string, () => Promise<void>>} */ ({
   overview: loadOverview,
-  search: async () => { await Promise.all([loadSources(), loadCategories()]); $('q').focus(); },
+  search: async () => { await Promise.all([loadSources(), loadCategories(), loadEquipment()]); $('q').focus(); },
   live: openLive,
   exam: async () => { await loadExamLanguages(); $('ex-q').focus(); },
   worklist: loadWorklist,
@@ -294,7 +294,7 @@ async function loadOverview() {
   actSel.replaceChildren(new Option('All sources', ''));
   for (const s of ov.sources) actSel.append(new Option(s.label + (s.kind === 'bundle' ? ' (bundle)' : ''), String(s.id)));
   actSel.value = ov.sources.some((/** @type {any} */ s) => String(s.id) === actKeep) ? actKeep : '';
-  loadActivity().catch((e) => notify(e.message));
+  loadEquipment().then(loadActivity).catch((e) => notify(e.message));
 
   fillTable('ov-sources', ov.sources, (s) => [
     s.label + (s.kind === 'bundle' ? ' (bundle)' : ''),
@@ -414,9 +414,51 @@ function actLabel(ms, size) {
 /** @param {number} ms */
 const actWhen = (ms) => new Date(ms).toISOString().replace('T', ' ').slice(0, 16);
 
+/** @type {any[]} */
+let equipmentCache = [];
+
+/** AE titles chosen in an equipment select: one AE title, or every AE title of a modality ("mod:US"). @param {string} value */
+function aetsOf(value) {
+  if (!value) return [];
+  if (!value.startsWith('mod:')) return [value];
+  const mod = value.slice(4);
+  return equipmentCache.filter((e) => e.modalities[mod]).map((e) => e.aet);
+}
+
+/** Fills an equipment select, grouped by modality. @param {string} id @param {boolean} groups whether "all of a modality" can be chosen */
+function fillEquipment(id, groups) {
+  const sel = $(id);
+  const keep = sel.value;
+  sel.replaceChildren(new Option(equipmentCache.length ? 'All equipment' : 'All equipment (none named in the logs)', ''));
+  /** @type {Map<string, any[]>} */
+  const byMod = new Map();
+  for (const e of equipmentCache) for (const m of Object.keys(e.modalities)) { if (!byMod.has(m)) byMod.set(m, []); byMod.get(m)?.push(e); }
+  for (const m of [...byMod.keys()].sort()) {
+    const list = byMod.get(m) || [];
+    const g = /** @type {HTMLOptGroupElement} */ (document.createElement('optgroup'));
+    g.label = m;
+    if (groups) g.append(new Option(`All ${m} (${list.length} AE title${list.length === 1 ? '' : 's'})`, 'mod:' + m));
+    for (const e of list) {
+      const o = new Option(`${e.aet}  ·  ${num(e.modalities[m])} line(s)`, e.aet);
+      o.title = `${e.aet}: ${Object.keys(e.modalities).join(', ')}${e.addresses.length ? ', ' + e.addresses.join(', ') : ''}; last seen ${utc(e.lastTs).slice(0, 16)}`;
+      g.append(o);
+    }
+    sel.append(g);
+  }
+  sel.value = [...sel.options].some((/** @type {HTMLOptionElement} */ o) => o.value === keep) ? keep : '';
+}
+
+async function loadEquipment() {
+  equipmentCache = await api('/api/equipment');
+  fillEquipment('act-aet', true);
+  fillEquipment('f-aet', false);
+}
+
 async function loadActivity() {
   const p = new URLSearchParams({ hours: $('act-hours').value });
   if ($('act-source').value) p.set('source', $('act-source').value);
+  const aets = aetsOf($('act-aet').value);
+  if (aets.length) p.set('aet', aets.slice(0, 50).join(','));
   activity = await api('/api/activity?' + p.toString());
   actIndex = -1;
   renderActivity();
@@ -441,7 +483,8 @@ function renderActivity() {
   const slot = a.bucketMs >= 86400000 ? (a.bucketMs / 86400000) + ' day(s)' : a.bucketMs >= 3600000 ? (a.bucketMs / 3600000) + ' hour(s)' : (a.bucketMs / 60000) + ' minutes';
   summary.textContent = `${actWhen(a.fromMs)} to ${actWhen(a.toMs)} UTC, one slot per ${slot}: ${num(t.events)} events, ${num(t.received)} received, ${num(t.sent)} sent, `
     + `${num(t.queries)} queries, ${num(t.retrieves)} retrievals, ${num(t.associations)} associations, ${num(t.errors)} errors and ${num(t.warnings)} warnings.`
-    + (a.localTimes ? ' Some sources have no time zone set, so their times are local and may be offset.' : '');
+    + (a.localTimes ? ' Some sources have no time zone set, so their times are local and may be offset.' : '')
+    + ($('act-aet').value ? ` Only lines naming ${$('act-aet').value.startsWith('mod:') ? 'the ' + $('act-aet').value.slice(4) + ' AE titles' : $('act-aet').value} are counted; periods without log lines are not checked in this view.` : '');
 
   for (const s of [...ACT_SERIES, ...ACT_PROBLEMS]) {
     const b = el('button');
@@ -480,13 +523,21 @@ function renderActivity() {
     const tx = svg('text', { x: left - 6, y: y + 4, 'text-anchor': 'end' }); tx.textContent = num(maxL * f); lines.append(tx);
   }
   const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor((width - left) / 80))));
+  let lastRight = -Infinity;
   for (let i = 0; i < n; i += every) {
-    const near = x(i) > width - right - 40 ? 'end' : x(i) < left + 30 ? 'start' : 'middle';
-    const tx = svg('text', { x: near === 'end' ? width - right : x(i), y: H - 6, 'text-anchor': near }); tx.textContent = actLabel(a.buckets[i].startMs, a.bucketMs); lines.append(tx);
+    const text = actLabel(a.buckets[i].startMs, a.bucketMs);
+    const w = text.length * 6.5;
+    const near = x(i) > width - right - w / 2 ? 'end' : x(i) < left + w / 2 ? 'start' : 'middle';
+    const ax = near === 'end' ? width - right : x(i);
+    const l0 = near === 'end' ? ax - w : near === 'start' ? ax : ax - w / 2;
+    if (l0 < lastRight + 8) continue; // skip a label that would overlap the previous one
+    lastRight = l0 + w;
+    const tx = svg('text', { x: ax, y: H - 6, 'text-anchor': near }); tx.textContent = text; lines.append(tx);
   }
   // The last slot is still open (the logs end inside it), so its segment is dashed rather than read as a drop.
   const pt = (/** @type {any} */ b, /** @type {number} */ i, /** @type {string} */ k) => x(i).toFixed(1) + ' ' + yL(b[k]).toFixed(1);
   for (const s of shown) {
+    if (!t[s.key]) continue; // nothing to draw: a flat line at zero would hide the axis and read as data
     const full = a.buckets.slice(0, Math.max(1, n - 1));
     const d = full.map((/** @type {any} */ b, /** @type {number} */ i) => (i ? 'L' : 'M') + pt(b, i, s.key)).join(' ');
     lines.append(svg('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
@@ -573,7 +624,10 @@ function renderActivity() {
 
 /** Opens the events of one time slot in Search (oldest first). @param {number} startMs @param {number} size */
 async function openActivitySlot(startMs, size) {
-  await Promise.all([loadSources(), loadCategories()]);
+  await Promise.all([loadSources(), loadCategories(), loadEquipment()]);
+  const chosen = $('act-aet').value;
+  $('f-aet').value = chosen && !chosen.startsWith('mod:') ? chosen : '';
+  if (chosen.startsWith('mod:')) notify('Search filters one AE title at a time, so all events of this slot are shown. Choose an AE title under Filters to narrow them.', true);
   $('q').value = '';
   setCategory('');
   $('f-level').value = '';
@@ -611,6 +665,7 @@ function searchParams() {
   if ($('f-level').value) p.set('minLevel', $('f-level').value);
   if ($('f-source').value) p.set('sources', $('f-source').value);
   if ($('f-category').value) p.set('category', $('f-category').value);
+  if ($('f-aet').value) p.set('aet', $('f-aet').value);
   if ($('f-from').value) p.set('from', $('f-from').value + 'Z');
   if ($('f-to').value) p.set('to', $('f-to').value + 'Z');
   if ($('f-exc').checked) p.set('exceptions', '1');
@@ -1602,7 +1657,7 @@ function renderWorklist(r) {
 async function start() {
   setupPreferences();
   for (const b of document.querySelectorAll('#tabs button')) b.addEventListener('click', () => showTab(/** @type {HTMLElement} */ (b).dataset.tab || 'overview'));
-  for (const id of ['act-hours', 'act-source']) $(id).addEventListener('change', () => { if (id === 'act-hours') savePref('activityHours', $(id).value); loadActivity().catch((e) => notify(e.message)); });
+  for (const id of ['act-hours', 'act-source', 'act-aet']) $(id).addEventListener('change', () => { if (id === 'act-hours') savePref('activityHours', $(id).value); loadActivity().catch((e) => notify(e.message)); });
   $('act-hours').value = pref('activityHours', '24');
   if (!$('act-hours').value) $('act-hours').value = '24';
   let actResize = 0;
