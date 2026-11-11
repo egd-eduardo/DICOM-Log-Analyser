@@ -15,6 +15,7 @@
   --log-bg: #0b1016;
   --hl-bg: #ffd34d;
   --hl-fg: #111111;
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181;
   color-scheme: dark;
 }
 [data-theme="light"] {
@@ -31,6 +32,7 @@
   --ok: #1b7f45;
   --info: #1f6fb5;
   --log-bg: #f7f9fb;
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4;
   color-scheme: light;
 }
 * { box-sizing: border-box; }
@@ -56,7 +58,8 @@ h3 { font-size: 14px; margin: 14px 0 6px; color: var(--muted); text-transform: u
 .small { font-size: 13px; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
 .between { justify-content: space-between; }
-.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); gap: 16px; }
+.grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); gap: 16px; }
+.grid2 > * { min-width: 0; }
 button, .button { font: inherit; border-radius: 6px; padding: 7px 14px; border: 1px solid var(--border); background: var(--panel-2); color: var(--text); cursor: pointer; text-decoration: none; display: inline-block; }
 button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
 button.danger { background: transparent; color: var(--danger); border-color: var(--danger); }
@@ -176,3 +179,29 @@ tr.clickable:hover, tr.clickable:focus { background: var(--panel-2); }
 .find-lines { margin: 0; padding: 30px 10px 8px 10px; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.82rem; line-height: 1.4; }
 .find-lines .ctx { color: var(--muted); }
 .find-lines .hitline { font-weight: 600; }
+
+/* Activity over time (Overview) */
+.act { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); padding: 12px 14px; margin: 16px 0; }
+.act-head h2 { margin: 0; }
+.act-controls { display: flex; flex-wrap: wrap; gap: 8px 16px; }
+.act-controls label { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.act-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 6px 0 4px; }
+.act-legend button { display: inline-flex; align-items: center; gap: 6px; background: transparent; border: 1px solid transparent; color: var(--text); font: inherit; font-size: 13px; padding: 2px 6px; border-radius: 4px; cursor: pointer; }
+.act-legend button[aria-pressed="false"] { color: var(--muted); text-decoration: line-through; }
+.act-legend button:focus-visible { outline: 2px solid var(--accent); }
+.act-key { display: inline-block; width: 14px; height: 0; border-top: 2px solid currentColor; }
+.act-key.sq { width: 10px; height: 10px; border: 0; border-radius: 2px; }
+.act-plot { position: relative; outline: none; }
+.act-plot:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.act-plot svg { display: block; width: 100%; overflow: hidden; }
+.act-plot svg text { fill: var(--muted); font-size: 11px; font-family: inherit; }
+.act-plot .grid { stroke: var(--border); stroke-width: 1; }
+.act-plot .cross { stroke: var(--text); stroke-width: 1; opacity: 0.5; }
+.act-plot .silent { fill: var(--panel-2); }
+.act-sub { margin: 6px 0 0; }
+.act-tip { position: absolute; top: 0; z-index: 3; min-width: 190px; max-width: 260px; pointer-events: none; background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+.act-tip .t { font-weight: 600; margin-bottom: 4px; }
+.act-tip .r { display: flex; align-items: center; gap: 6px; }
+.act-tip .r strong { min-width: 44px; text-align: right; }
+.act-tip .hint { color: var(--muted); margin-top: 4px; }
+.act-table summary { cursor: pointer; font-size: 13px; color: var(--muted); }

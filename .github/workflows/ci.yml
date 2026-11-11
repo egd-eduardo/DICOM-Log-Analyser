@@ -1,16 +1,27 @@
 name: CI
 
+# Build minutes are limited on a private repository (macOS counts 10 times, Windows twice), so:
+# - pull requests run the Linux checks only (every change is checked once, not once per push and once per PR);
+#   label a pull request "full-ci" to also build and test the Windows, macOS and Linux packages before merging;
+# - a push to main (a merged pull request) runs everything, which the release workflow requires;
+# - "Run workflow" (workflow_dispatch) runs everything on demand;
+# - changes to documentation only do not start a build.
 on:
   push:
-    branches: [ main, 'claude/**' ]
+    branches: [ main ]
+    paths-ignore: [ '**/*.md', 'docs/**', 'LICENSE' ]
   pull_request:
+    branches: [ main ]
+    types: [ opened, synchronize, reopened, labeled ]
+    paths-ignore: [ '**/*.md', 'docs/**', 'LICENSE' ]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # A label other than "full-ci" gets its own group, so it never cancels a run in progress.
+  group: ci-${{ github.ref }}-${{ (github.event.action == 'labeled' && github.event.label.name != 'full-ci') && 'label' || 'build' }}
   cancel-in-progress: true
 
 env:
@@ -23,6 +34,8 @@ env:
 jobs:
   linux:
     name: Linux checks, tests, container image
+    # Adding a label other than "full-ci" does not need a new run.
+    if: github.event.action != 'labeled' || github.event.label.name == 'full-ci'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -78,13 +91,16 @@ jobs:
   portable:
     name: Portable package ${{ matrix.rid }}
     needs: linux
+    if: github.event_name != 'pull_request' || contains(github.event.pull_request.labels.*.name, 'full-ci')
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: windows-latest, rid: win-x64, exe: DicomLogAnalyser.exe }
-          - { os: macos-latest, rid: osx-arm64, exe: DicomLogAnalyser }
-          - { os: ubuntu-latest, rid: linux-x64, exe: DicomLogAnalyser }
+          # tests: the full suite where the platform differs most cheaply (Windows, 2x); on macOS (10x) only the tests
+          # of platform-specific code; none on Linux, where the "linux" job has just run them all.
+          - { os: windows-latest, rid: win-x64, exe: DicomLogAnalyser.exe, tests: 'FullyQualifiedName!~NoSuchTest' }
+          - { os: macos-latest, rid: osx-arm64, exe: DicomLogAnalyser, tests: 'FullyQualifiedName~ConfigurationTests|FullyQualifiedName~CoordinatorTests|FullyQualifiedName~LocalInstanceTests|FullyQualifiedName~TimeZoneTests|FullyQualifiedName~TextFoldingTests|FullyQualifiedName~FileFinderTests|FullyQualifiedName~TailReaderTests|FullyQualifiedName~SelectionTests|FullyQualifiedName~WebSecurityTests' }
+          - { os: ubuntu-latest, rid: linux-x64, exe: DicomLogAnalyser, tests: '' }
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     steps:
@@ -95,7 +111,12 @@ jobs:
         with:
           global-json-file: global.json
       - run: dotnet restore DicomLogAnalyser.slnx --locked-mode
-      - run: dotnet test DicomLogAnalyser.slnx -c Release --no-restore
+      - name: Tests (${{ matrix.tests && 'selected for this platform' || 'none, already run by the Linux job' }})
+        if: matrix.tests != ''
+        run: dotnet test DicomLogAnalyser.slnx -c Release --no-restore --filter "${{ matrix.tests }}"
+      - name: Build (when no tests run)
+        if: matrix.tests == ''
+        run: dotnet build DicomLogAnalyser.slnx -c Release --no-restore
       - name: Time zones without ICU (NLS mode, as on Windows Server 2016)
         if: runner.os == 'Windows'
         env:
@@ -143,4 +164,4 @@ jobs:
         with:
           name: DicomLogAnalyser-${{ matrix.rid }}
           path: publish/
-          retention-days: 7
+          retention-days: 3

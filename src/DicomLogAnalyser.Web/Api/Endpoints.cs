@@ -65,6 +65,38 @@ public static class Endpoints
 
         api.MapGet("/overview", (OverviewService overview) => Results.Json(overview.Build()));
 
+        // Activity over time (Overview chart): events, errors, warnings and DICOM activities per time slot, ending at the
+        // newest indexed event. hours = 24, 168, 720 or "all"; source = one source id or empty for all.
+        api.MapGet("/activity", (HttpContext ctx, ActivityService activity) =>
+        {
+            var q = ctx.Request.Query;
+            int? hours = 24;
+            var hoursText = q["hours"].ToString();
+            if (hoursText == "all") hours = null;
+            else if (hoursText.Length > 0)
+            {
+                if (!int.TryParse(hoursText, NumberStyles.None, CultureInfo.InvariantCulture, out var h) || h is < 1 or > 24 * 366) return Bad("Invalid period.");
+                hours = h;
+            }
+
+            long? source = null;
+            var sourceText = q["source"].ToString();
+            if (sourceText.Length > 0)
+            {
+                if (!long.TryParse(sourceText, NumberStyles.None, CultureInfo.InvariantCulture, out var id)) return Bad("Invalid source.");
+                source = id;
+            }
+
+            var aets = new List<string>();
+            foreach (var part in q["aet"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries))
+            {
+                if (!EquipmentService.IsValidAet(part) || aets.Count >= ActivityService.MaxAets) return Bad("Invalid AE title list.");
+                aets.Add(part);
+            }
+
+            return Results.Json(activity.Build(hours, source, aets));
+        });
+
         // Exam history: first receipt, updates (new series), resends per destination, final series, with evidence.
         api.MapGet("/exam", (HttpContext ctx, Core.Exam.ExamHistoryService exams) =>
         {
@@ -101,6 +133,9 @@ public static class Endpoints
 
             return Results.Json(worklist.Analyse(ids.Count > 0 ? ids : null, hours));
         });
+
+        // Equipment named in the logs with its modality ("Mod US, PHILLIS4"), for the equipment filters.
+        api.MapGet("/equipment", (EquipmentService equipment) => Results.Json(equipment.List()));
 
         api.MapGet("/categories", (OverviewService overview) => Results.Json(overview.Categories()));
 
@@ -635,6 +670,14 @@ public static class Endpoints
         var text = q["q"].ToString();
         var category = q["category"].ToString();
         if (text.Length > FtsQuery.MaxInputLength || category.Length > 200) return (null, "The search text is too long.");
+        // Equipment filter: the AE title must appear in the event, as an extra required (quoted) term.
+        var aet = q["aet"].ToString();
+        if (aet.Length > 0)
+        {
+            if (!EquipmentService.IsValidAet(aet)) return (null, "Invalid AE title.");
+            text = (text + " \"" + aet + "\"").Trim();
+        }
+
         return (new SearchRequest
         {
             Text = text,

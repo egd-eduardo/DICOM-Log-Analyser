@@ -160,6 +160,30 @@ public sealed class LiveHostTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Activity_endpoint_validates_its_parameters()
+    {
+        AddFolder("a.log");
+        using (var ok = await Get("/api/activity?hours=168"))
+        {
+            Assert.Equal(HttpStatusCode.OK, ok.StatusCode);
+            var body = await ok.Content.ReadFromJsonAsync<JsonElement>();
+            Assert.Equal(JsonValueKind.Array, body.GetProperty("buckets").ValueKind);
+            Assert.Equal(JsonValueKind.Object, body.GetProperty("totals").ValueKind);
+        }
+
+        using (var eq = await Get("/api/equipment"))
+            Assert.Equal(JsonValueKind.Array, (await eq.Content.ReadFromJsonAsync<JsonElement>()).ValueKind);
+        using (var filtered = await Get("/api/activity?hours=all&aet=PHILLIS4,TESTMOD01"))
+            Assert.Equal(HttpStatusCode.OK, filtered.StatusCode);
+
+        foreach (var bad in new[] { "/api/activity?aet=" + new string('A', 17), "/api/activity?aet=A%5CB", "/api/activity?hours=0", "/api/activity?hours=-1", "/api/activity?hours=x", "/api/activity?hours=99999", "/api/activity?source=abc" })
+        {
+            using var res = await Get(bad);
+            Assert.Equal(HttpStatusCode.BadRequest, res.StatusCode);
+        }
+    }
+
+    [Fact]
     public void Find_targets_skip_files_outside_the_source_folder()
     {
         var (id, _) = AddFolder("a.log");
