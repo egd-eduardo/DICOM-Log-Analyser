@@ -65,6 +65,31 @@ public static class Endpoints
 
         api.MapGet("/overview", (OverviewService overview) => Results.Json(overview.Build()));
 
+        // Activity over time (Overview chart): events, errors, warnings and DICOM activities per time slot, ending at the
+        // newest indexed event. hours = 24, 168, 720 or "all"; source = one source id or empty for all.
+        api.MapGet("/activity", (HttpContext ctx, ActivityService activity) =>
+        {
+            var q = ctx.Request.Query;
+            int? hours = 24;
+            var hoursText = q["hours"].ToString();
+            if (hoursText == "all") hours = null;
+            else if (hoursText.Length > 0)
+            {
+                if (!int.TryParse(hoursText, NumberStyles.None, CultureInfo.InvariantCulture, out var h) || h is < 1 or > 24 * 366) return Bad("Invalid period.");
+                hours = h;
+            }
+
+            long? source = null;
+            var sourceText = q["source"].ToString();
+            if (sourceText.Length > 0)
+            {
+                if (!long.TryParse(sourceText, NumberStyles.None, CultureInfo.InvariantCulture, out var id)) return Bad("Invalid source.");
+                source = id;
+            }
+
+            return Results.Json(activity.Build(hours, source));
+        });
+
         // Exam history: first receipt, updates (new series), resends per destination, final series, with evidence.
         api.MapGet("/exam", (HttpContext ctx, Core.Exam.ExamHistoryService exams) =>
         {

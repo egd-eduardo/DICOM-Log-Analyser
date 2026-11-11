@@ -289,6 +289,13 @@ async function loadOverview() {
     gapBox.append(box);
   }
 
+  const actSel = $('act-source');
+  const actKeep = actSel.value;
+  actSel.replaceChildren(new Option('All sources', ''));
+  for (const s of ov.sources) actSel.append(new Option(s.label + (s.kind === 'bundle' ? ' (bundle)' : ''), String(s.id)));
+  actSel.value = ov.sources.some((/** @type {any} */ s) => String(s.id) === actKeep) ? actKeep : '';
+  loadActivity().catch((e) => notify(e.message));
+
   fillTable('ov-sources', ov.sources, (s) => [
     s.label + (s.kind === 'bundle' ? ' (bundle)' : ''),
     statusCell(s.enabled ? s.lastScanStatus : 'disabled', s.lastScanMessage),
@@ -358,6 +365,224 @@ function linkEvent(text, id) {
   const a = el('a', '', text); a.href = '#';
   a.addEventListener('click', (ev) => { ev.preventDefault(); highlightRegex = null; openEvent(id); });
   return a;
+}
+
+// ---------- Activity over time (Overview) ----------
+
+/** Series of the activity chart: fixed colour slots (colour follows the series, never its rank). */
+const ACT_SERIES = [
+  { key: 'received', label: 'Received', color: 'var(--s1)' },
+  { key: 'sent', label: 'Sent', color: 'var(--s2)' },
+  { key: 'queries', label: 'Queries (C-FIND)', color: 'var(--s3)' },
+  { key: 'retrieves', label: 'Retrievals (C-MOVE/C-GET)', color: 'var(--s4)' },
+  { key: 'associations', label: 'Associations', color: 'var(--s5)' },
+];
+const ACT_PROBLEMS = [
+  { key: 'errors', label: 'Errors', color: 'var(--danger)' },
+  { key: 'warnings', label: 'Warnings', color: 'var(--warn)' },
+];
+/** @type {any} */
+let activity = null;
+let actIndex = -1;
+/** @type {Set<string>} */
+const actHidden = new Set(pref('activityHidden', '').split(',').filter(Boolean));
+const SVG_NS = 'http://www.w3.org/2000/svg';
+
+/** @param {string} tag @param {Record<string, string | number>} attrs @returns {any} */
+function svg(tag, attrs) {
+  const e = document.createElementNS(SVG_NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, String(v));
+  return e;
+}
+
+/** A rounded-up axis maximum (1, 2, 2.5, 5 × 10^n). @param {number} max */
+function niceMax(max) {
+  if (max <= 4) return 4;
+  const p = Math.pow(10, Math.floor(Math.log10(max)));
+  for (const m of [1, 2, 2.5, 5, 10]) if (m * p >= max) return m * p;
+  return 10 * p;
+}
+
+/** @param {number} ms @param {number} size */
+function actLabel(ms, size) {
+  const d = new Date(ms);
+  const day = d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', timeZone: 'UTC' });
+  if (size >= 86400000) return day;
+  return d.toISOString().slice(11, 16) + (d.getUTCHours() === 0 && d.getUTCMinutes() === 0 ? ' ' + day : '');
+}
+
+/** @param {number} ms */
+const actWhen = (ms) => new Date(ms).toISOString().replace('T', ' ').slice(0, 16);
+
+async function loadActivity() {
+  const p = new URLSearchParams({ hours: $('act-hours').value });
+  if ($('act-source').value) p.set('source', $('act-source').value);
+  activity = await api('/api/activity?' + p.toString());
+  actIndex = -1;
+  renderActivity();
+}
+
+function renderActivity() {
+  const a = activity;
+  if (!a) return;
+  const t = a.totals;
+  const summary = $('act-summary');
+  const legend = $('act-legend');
+  legend.replaceChildren();
+  for (const id of ['act-lines', 'act-bars', 'act-silent']) $(id).replaceChildren();
+  $('act-table').querySelector('tbody').replaceChildren();
+  $('act-tip').classList.add('hidden');
+  if (!a.buckets.length) {
+    summary.textContent = 'No events with a time are indexed yet. Add a folder under Sources, or wait for the first scan to finish.';
+    $('act-plot').classList.add('hidden');
+    return;
+  }
+  $('act-plot').classList.remove('hidden');
+  const slot = a.bucketMs >= 86400000 ? (a.bucketMs / 86400000) + ' day(s)' : a.bucketMs >= 3600000 ? (a.bucketMs / 3600000) + ' hour(s)' : (a.bucketMs / 60000) + ' minutes';
+  summary.textContent = `${actWhen(a.fromMs)} to ${actWhen(a.toMs)} UTC, one slot per ${slot}: ${num(t.events)} events, ${num(t.received)} received, ${num(t.sent)} sent, `
+    + `${num(t.queries)} queries, ${num(t.retrieves)} retrievals, ${num(t.associations)} associations, ${num(t.errors)} errors and ${num(t.warnings)} warnings.`
+    + (a.localTimes ? ' Some sources have no time zone set, so their times are local and may be offset.' : '');
+
+  for (const s of [...ACT_SERIES, ...ACT_PROBLEMS]) {
+    const b = el('button');
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(!actHidden.has(s.key)));
+    const key = el('span', 'act-key' + (ACT_PROBLEMS.includes(s) ? ' sq' : ''));
+    key.style.color = s.color; if (ACT_PROBLEMS.includes(s)) key.style.background = s.color;
+    b.append(key, `${s.label} ${num(t[s.key])}`);
+    b.title = actHidden.has(s.key) ? 'Show this series' : 'Hide this series';
+    b.addEventListener('click', () => {
+      if (actHidden.has(s.key)) actHidden.delete(s.key); else actHidden.add(s.key);
+      savePref('activityHidden', [...actHidden].join(','));
+      renderActivity();
+    });
+    legend.append(b);
+  }
+
+  const width = Math.max(300, $('act-plot').clientWidth);
+  const left = 44, right = 8, n = a.buckets.length;
+  const step = (width - left - right) / n;
+  const x = (/** @type {number} */ i) => left + step * (i + 0.5);
+
+  // Lines: one per DICOM activity, a single y-axis (counts per slot).
+  const H = 200, top = 8, bottom = 22;
+  const shown = ACT_SERIES.filter((s) => !actHidden.has(s.key));
+  const maxL = niceMax(Math.max(0, ...a.buckets.flatMap((/** @type {any} */ b) => shown.map((s) => b[s.key]))));
+  const yL = (/** @type {number} */ v) => top + (H - top - bottom) * (1 - v / maxL);
+  const lines = svg('svg', { viewBox: `0 0 ${width} ${H}`, height: H, 'aria-hidden': 'true' });
+  for (const sp of a.silent) {
+    const i0 = Math.round((sp.fromMs - a.fromMs) / a.bucketMs), i1 = Math.round((sp.toMs - a.fromMs) / a.bucketMs);
+    lines.append(svg('rect', { class: 'silent', x: left + step * i0, y: top, width: step * (i1 - i0), height: H - top - bottom }));
+  }
+  for (const f of [0, 0.5, 1]) {
+    const y = yL(maxL * f);
+    lines.append(svg('line', { class: 'grid', x1: left, x2: width - right, y1: y, y2: y }));
+    const tx = svg('text', { x: left - 6, y: y + 4, 'text-anchor': 'end' }); tx.textContent = num(maxL * f); lines.append(tx);
+  }
+  const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor((width - left) / 80))));
+  for (let i = 0; i < n; i += every) {
+    const near = x(i) > width - right - 40 ? 'end' : x(i) < left + 30 ? 'start' : 'middle';
+    const tx = svg('text', { x: near === 'end' ? width - right : x(i), y: H - 6, 'text-anchor': near }); tx.textContent = actLabel(a.buckets[i].startMs, a.bucketMs); lines.append(tx);
+  }
+  // The last slot is still open (the logs end inside it), so its segment is dashed rather than read as a drop.
+  const pt = (/** @type {any} */ b, /** @type {number} */ i, /** @type {string} */ k) => x(i).toFixed(1) + ' ' + yL(b[k]).toFixed(1);
+  for (const s of shown) {
+    const full = a.buckets.slice(0, Math.max(1, n - 1));
+    const d = full.map((/** @type {any} */ b, /** @type {number} */ i) => (i ? 'L' : 'M') + pt(b, i, s.key)).join(' ');
+    lines.append(svg('path', { d, fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-linejoin': 'round', 'stroke-linecap': 'round' }));
+    if (n > 1) lines.append(svg('path', { d: 'M' + pt(a.buckets[n - 2], n - 2, s.key) + ' L' + pt(a.buckets[n - 1], n - 1, s.key), fill: 'none', stroke: s.color, 'stroke-width': 2, 'stroke-dasharray': '3 3', 'stroke-linecap': 'round' }));
+  }
+  const crossL = svg('line', { class: 'cross', y1: top, y2: H - bottom, x1: 0, x2: 0, visibility: 'hidden' });
+  lines.append(crossL);
+  $('act-lines').append(lines);
+
+  // Bars: errors and warnings stacked per slot, its own chart (no second axis on the line chart).
+  const HB = 80, bb = 4;
+  const shownP = ACT_PROBLEMS.filter((s) => !actHidden.has(s.key));
+  const maxB = niceMax(Math.max(0, ...a.buckets.map((/** @type {any} */ b) => shownP.reduce((sum, s) => sum + b[s.key], 0))));
+  const hB = (/** @type {number} */ v) => (HB - top - bb) * v / maxB;
+  const bars = svg('svg', { viewBox: `0 0 ${width} ${HB}`, height: HB, 'aria-hidden': 'true' });
+  bars.append(svg('line', { class: 'grid', x1: left, x2: width - right, y1: HB - bb, y2: HB - bb }));
+  const tmax = svg('text', { x: left - 6, y: top + 4, 'text-anchor': 'end' }); tmax.textContent = num(maxB); bars.append(tmax);
+  const bw = Math.max(1, step - 2);
+  a.buckets.forEach((/** @type {any} */ b, /** @type {number} */ i) => {
+    let base = HB - bb;
+    for (const s of shownP) {
+      const h = hB(b[s.key]);
+      if (h <= 0) continue;
+      bars.append(svg('rect', { x: x(i) - bw / 2, y: base - h, width: bw, height: Math.max(1, h - (base === HB - bb ? 0 : 2)), rx: Math.min(2, bw / 2), fill: s.color }));
+      base -= h;
+    }
+  });
+  const crossB = svg('line', { class: 'cross', y1: top, y2: HB - bb, x1: 0, x2: 0, visibility: 'hidden' });
+  bars.append(crossB);
+  $('act-bars').append(bars);
+
+  // Hover, keyboard and click: one readout for every series at the slot under the pointer.
+  const plot = $('act-plot');
+  /** @param {number} i */
+  const show = (i) => {
+    actIndex = Math.max(0, Math.min(n - 1, i));
+    const b = a.buckets[actIndex];
+    for (const c of [crossL, crossB]) { c.setAttribute('x1', String(x(actIndex))); c.setAttribute('x2', String(x(actIndex))); c.setAttribute('visibility', 'visible'); }
+    const tip = $('act-tip');
+    tip.replaceChildren(el('div', 't', `${actWhen(b.startMs)} to ${actWhen(b.startMs + a.bucketMs).slice(11)} UTC`));
+    for (const s of [...ACT_SERIES, ...ACT_PROBLEMS]) {
+      if (actHidden.has(s.key)) continue;
+      const r = el('div', 'r');
+      const k = el('span', 'act-key' + (ACT_PROBLEMS.includes(s) ? ' sq' : '')); k.style.color = s.color; if (ACT_PROBLEMS.includes(s)) k.style.background = s.color;
+      r.append(k, el('strong', '', num(b[s.key])), el('span', '', s.label));
+      tip.append(r);
+    }
+    tip.append(el('div', 'hint', `${num(b.events)} ${b.events === 1 ? 'event' : 'events'} in total.${actIndex === n - 1 ? ' The logs end inside this slot, so it is incomplete.' : ''} Click to open them in Search.`));
+    tip.classList.remove('hidden');
+    const px = x(actIndex) * plot.clientWidth / width;
+    tip.style.left = (px > plot.clientWidth / 2 ? Math.max(0, px - tip.offsetWidth - 12) : px + 12) + 'px';
+  };
+  plot.onpointermove = (/** @type {PointerEvent} */ ev) => {
+    const r = plot.getBoundingClientRect();
+    const vx = (ev.clientX - r.left) * width / r.width;
+    if (vx < left) return;
+    show(Math.floor((vx - left) / step));
+  };
+  plot.onpointerleave = () => { $('act-tip').classList.add('hidden'); for (const c of [crossL, crossB]) c.setAttribute('visibility', 'hidden'); };
+  plot.onclick = () => { if (actIndex >= 0) openActivitySlot(a.buckets[actIndex].startMs, a.bucketMs).catch((e) => notify(e.message)); };
+  plot.onkeydown = (/** @type {KeyboardEvent} */ ev) => {
+    if (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft') { ev.preventDefault(); show((actIndex < 0 ? n : actIndex) + (ev.key === 'ArrowRight' ? 1 : -1)); }
+    else if (ev.key === 'Home' || ev.key === 'End') { ev.preventDefault(); show(ev.key === 'Home' ? 0 : n - 1); }
+    else if (ev.key === 'Enter' && actIndex >= 0) openActivitySlot(a.buckets[actIndex].startMs, a.bucketMs).catch((e) => notify(e.message));
+    else if (ev.key === 'Escape') plot.onpointerleave();
+  };
+  plot.setAttribute('aria-label', 'Activity chart. ' + summary.textContent);
+
+  if (a.silent.length) {
+    const box = el('div', 'gaps small');
+    box.append(el('strong', '', 'Periods with no log lines at all (shaded): '));
+    box.append(a.silent.slice(0, 10).map((/** @type {any} */ s) => `${actWhen(s.fromMs)} to ${actWhen(s.toMs).slice(11)} UTC`).join('; ') + (a.silent.length > 10 ? '; …' : '') + '. ');
+    box.append(el('span', 'muted', 'This can be normal on a quiet night, but also means the service was stopped, not logging, or its log files are not chosen for analysis.'));
+    $('act-silent').append(box);
+  }
+
+  const tbody = $('act-table').querySelector('tbody');
+  for (const b of a.buckets) {
+    const tr = el('tr');
+    for (const v of [actWhen(b.startMs), b.events, b.errors, b.warnings, b.received, b.sent, b.queries, b.retrieves, b.associations]) tr.append(el('td', '', typeof v === 'number' ? num(v) : v));
+    tbody.append(tr);
+  }
+}
+
+/** Opens the events of one time slot in Search (oldest first). @param {number} startMs @param {number} size */
+async function openActivitySlot(startMs, size) {
+  await Promise.all([loadSources(), loadCategories()]);
+  $('q').value = '';
+  setCategory('');
+  $('f-level').value = '';
+  $('f-source').value = $('act-source').value;
+  $('f-from').value = new Date(startMs).toISOString().slice(0, 19);
+  $('f-to').value = new Date(startMs + size - 1000).toISOString().slice(0, 19);
+  $('f-order').value = 'oldest';
+  showTab('search');
+  await runSearch(false);
 }
 
 // ---------- Search ----------
@@ -1377,6 +1602,11 @@ function renderWorklist(r) {
 async function start() {
   setupPreferences();
   for (const b of document.querySelectorAll('#tabs button')) b.addEventListener('click', () => showTab(/** @type {HTMLElement} */ (b).dataset.tab || 'overview'));
+  for (const id of ['act-hours', 'act-source']) $(id).addEventListener('change', () => { if (id === 'act-hours') savePref('activityHours', $(id).value); loadActivity().catch((e) => notify(e.message)); });
+  $('act-hours').value = pref('activityHours', '24');
+  if (!$('act-hours').value) $('act-hours').value = '24';
+  let actResize = 0;
+  window.addEventListener('resize', () => { window.clearTimeout(actResize); actResize = window.setTimeout(renderActivity, 150); });
   $('ov-refresh').addEventListener('click', () => loadOverview().catch((e) => notify(e.message)));
   $('search-form').addEventListener('submit', (/** @type {Event} */ ev) => { ev.preventDefault(); runSearch(false).catch((e) => notify(e.message)); });
   $('more').addEventListener('click', () => runSearch(true).catch((e) => notify(e.message)));

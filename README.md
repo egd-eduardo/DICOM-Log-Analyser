@@ -223,6 +223,22 @@ Notes:
 * **Encoding:** UTF-8 by default (with or without byte order mark); a line that is not valid UTF-8 is read as
   Windows Latin-1, so accented characters from older tools still display.
 
+## Activity over time (Overview)
+
+* A chart on the Overview shows, per time slot, the log lines about **received** studies or images, **sent** ones,
+  **queries** (C-FIND), **retrievals** (C-MOVE/C-GET) and **associations**, with a second chart of **errors and
+  warnings** below it. Choose the last 24 hours, 7 days or 30 days of the logs, or everything indexed, and one source or
+  all. The period ends at the newest indexed line (not at the current time), so older logs chosen for analysis still
+  show a useful chart.
+* Activities are recognised from the wording of each line, across formats; responses (`-RSP`, `-AC`) are not counted.
+  The numbers are **lines about an activity, not exact study counts**, because many services write several lines per
+  transfer: use them to compare periods and spot changes, not as totals.
+* **Silent periods** of an hour or more with no log line at all are shaded and listed: a stopped service, a logging
+  gap, or files not chosen for analysis. The last slot, which the logs end inside, is drawn dashed.
+* Point at the chart (or focus it and use the arrow keys) for every number of a slot; click it (or press Enter) to open
+  that slot's events in Search. Each series can be hidden from the legend; **Show as table** lists every slot.
+* Computed on this computer from the index (about 1.3 s per million events, then cached until new lines are indexed).
+
 ## Find in files (no index needed)
 
 * **Find in files** on the Search tab reads the chosen log files directly, line by line, like *Find in Files* in

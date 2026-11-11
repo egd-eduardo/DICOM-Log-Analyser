@@ -85,6 +85,7 @@ public static class AppHost
         builder.Services.AddSingleton(new Core.Exam.ExamHistoryService(searchService));
         builder.Services.AddSingleton(new Core.Worklist.WorklistAnalysis(db));
         builder.Services.AddSingleton(new OverviewService(db));
+        builder.Services.AddSingleton(new ActivityService(db));
         builder.Services.AddSingleton(new PathValidator(paths, options.Mode == AppMode.Server ? options.SourceRoots : []));
         // Stopping waits at most 10 seconds for background work (a scan stops at its next checkpoint).
         builder.Services.Configure<HostOptions>(o => o.ShutdownTimeout = TimeSpan.FromSeconds(10));

@@ -108,6 +108,19 @@ volume, against about 3 times before) and the first scan slower; see the measure
 * Each response includes per-level counts and **coverage notes** computed from source state, so the UI can state
   whether "no result" might be caused by a gap rather than by absence of the event.
 
+## Activity over time
+
+* `GET /api/activity?hours=24|168|720|all&source=` (`ActivityService`) reads `ts`, level and the first 400 characters of
+  each message in the period through the `sort_ts` index, inside one read snapshot, and counts per slot. The slot size
+  is the smallest of 5 minutes to 30 days giving at most 100 slots; the period ends at the newest event and starts no
+  earlier than the first.
+* `ActivityClassifier` assigns at most one activity per event by wording, in this order: responses excluded,
+  association accepted, query, C-STORE being sent, retrieval, received, sent. Continuation lines (PDU dumps) are not
+  classified. Errors and warnings are counted by level, independently of the activity.
+* Slots without any event between the first and last event that together last an hour or more are reported as silent.
+* Results are cached per period and source until the index changes (`DataVersion`). Measured: 955 000 events in 1.3 s,
+  4 ms from the cache.
+
 ## Find in files
 
 * `GET /api/find?q=&sources=` streams the chosen files of each enabled source (bundle files too) through `LineReader`
