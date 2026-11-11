@@ -33,7 +33,8 @@ Pushes to working branches no longer start a separate run (the pull request run 
 package jobs, Windows runs all tests (including time zones without ICU), macOS runs the 113 tests of platform-specific
 code (configuration and data folder, background priority, single instance, time zones, text folding, file reading,
 file selection, HTTP security), and Linux runs none, as the Linux job has just run all of them. Estimated use per
-merged change: about 25 to 35 counted minutes, against about 70 before. Verified locally on 2026-11-11: actionlint
+merged change with one pull request push: about 90 counted minutes (about half of it the macOS job), against about 200
+to 300 before, when every push ran all four jobs twice (branch push and pull request). Verified locally on 2026-11-11: actionlint
 passed on both workflows; the macOS filter selects 113 tests and the Windows filter all 318, all passing.
 
 ## Results recorded on 2026-11-04 (development container, Ubuntu 24.04, .NET SDK 10.0.114, 4 CPUs)
