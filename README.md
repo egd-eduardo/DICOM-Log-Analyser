@@ -503,6 +503,12 @@ powershell -ExecutionPolicy Bypass -File scripts\check.ps1
 Single packages for any platform: `./scripts/package.sh <rid>` or `scripts\package.ps1 -Runtime <rid>` with `win-x64`,
 `win-arm64`, `osx-arm64`, `osx-x64`, `linux-x64` or `linux-arm64`.
 
+**Icons:** the browser icon (`src/DicomLogAnalyser.Web/Ui/favicon.svg`) is also the Windows program icon
+(`Assets/app.ico`, shown in Explorer, on the taskbar and on the program's window) and the Safari/iOS bookmark icon
+(`Ui/apple-touch-icon.png`). After changing the SVG, regenerate both with `node tools/icons/make-icons.cjs` (needs
+Node.js and Playwright with Chromium). The macOS and Linux packages are a program plus a start script, which have no
+icon of their own.
+
 ## Licence
 
 No open-source licence has been selected. Unless and until the copyright holder adds one, all rights are reserved.

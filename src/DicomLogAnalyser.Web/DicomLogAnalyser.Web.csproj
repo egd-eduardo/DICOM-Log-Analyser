@@ -7,6 +7,8 @@
     <!-- Source-generated P/Invoke for the Windows folder dialog. -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <UseAppHost>true</UseAppHost>
+    <!-- Program icon (Windows Explorer, taskbar, console window): the browser icon Ui/favicon.svg rendered at 16 to 256 px. -->
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <!-- Off on purpose: the analyzer pulls Microsoft.NET.ILLink.Tasks, whose version follows each machine's SDK patch
          level and would make the lock file differ between developers and CI. -->
     <EnableSingleFileAnalyzer>false</EnableSingleFileAnalyzer>

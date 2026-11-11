@@ -20,6 +20,23 @@ approved environment.
 CI (`.github/workflows/ci.yml`) runs the same script on Linux, builds and probes the container image, validates the
 Compose file, and builds/starts the portable executable on Windows, macOS and Linux.
 
+To stay within the build minutes of a private repository (macOS minutes count 10 times, Windows twice), CI runs:
+
+| Trigger | Linux checks and container | Packages on Windows, macOS, Linux |
+|---|---|---|
+| Pull request to `main` | Yes | Only with the label `full-ci` |
+| Push to `main` (merged pull request) | Yes | Yes (required by the release workflow) |
+| Run workflow (by hand) | Yes | Yes |
+| Documentation only (`*.md`, `docs/`) | No | No |
+
+Pushes to working branches no longer start a separate run (the pull request run checks the same change). In the
+package jobs, Windows runs all tests (including time zones without ICU), macOS runs the 113 tests of platform-specific
+code (configuration and data folder, background priority, single instance, time zones, text folding, file reading,
+file selection, HTTP security), and Linux runs none, as the Linux job has just run all of them. Estimated use per
+merged change with one pull request push: about 90 counted minutes (about half of it the macOS job), against about 200
+to 300 before, when every push ran all four jobs twice (branch push and pull request). Verified locally on 2026-11-11: actionlint
+passed on both workflows; the macOS filter selects 113 tests and the Windows filter all 318, all passing.
+
 ## Results recorded on 2026-11-04 (development container, Ubuntu 24.04, .NET SDK 10.0.114, 4 CPUs)
 
 These checks were actually run; nothing below is assumed.

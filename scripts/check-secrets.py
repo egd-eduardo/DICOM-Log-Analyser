@@ -27,6 +27,12 @@ IPV4 = re.compile(r'(?<![\d.])((?:\d{1,3}\.){3}\d{1,3})(?![\d.])')
 DOC_NETS = [ipaddress.ip_network(n) for n in ('192.0.2.0/24', '198.51.100.0/24', '203.0.113.0/24')]
 SKIP_DIRS = {'.git', 'bin', 'obj', 'node_modules', 'artifacts', 'TestResults'}
 SKIP_FILES = {'packages.lock.json', 'package-lock.json'}
+# The only binary files allowed: icons generated from Ui/favicon.svg by tools/icons/make-icons.cjs. Each must start
+# with the stated signature, so a screenshot or export renamed to one of these paths is still refused.
+ALLOWED_BINARY = {
+    'src/DicomLogAnalyser.Web/Assets/app.ico': b'\x00\x00\x01\x00',
+    'src/DicomLogAnalyser.Web/Ui/apple-touch-icon.png': b'\x89PNG\r\n\x1a\n',
+}
 
 
 def files():
@@ -39,6 +45,14 @@ def files():
             dirs[:] = [x for x in dirs if x not in SKIP_DIRS]
             result += [os.path.relpath(os.path.join(d, f), ROOT) for f in fs]
         return result
+
+
+def allowed_image(rel, signature):
+    """An allowed icon: the expected signature and a plausible size (a small generated icon, not a photo)."""
+    path = os.path.join(ROOT, rel)
+    with open(path, 'rb') as f:
+        head = f.read(len(signature))
+    return head == signature and os.path.getsize(path) <= 64 * 1024
 
 
 def ip_ok(text):
@@ -65,6 +79,9 @@ def main():
         except OSError:
             continue
         if '\0' in text[:4096]:
+            norm = rel.replace(os.sep, '/')
+            if norm in ALLOWED_BINARY and allowed_image(rel, ALLOWED_BINARY[norm]):
+                continue
             problems.append(f'{rel}: binary file')
             continue
         for n, line in enumerate(text.splitlines(), 1):
