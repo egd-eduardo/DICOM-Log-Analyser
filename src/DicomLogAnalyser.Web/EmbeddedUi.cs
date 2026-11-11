@@ -10,6 +10,7 @@ public static class EmbeddedUi
         ["/app.js"] = ("ui/app.js", "text/javascript; charset=utf-8"),
         ["/app.css"] = ("ui/app.css", "text/css; charset=utf-8"),
         ["/favicon.svg"] = ("ui/favicon.svg", "image/svg+xml"),
+        ["/apple-touch-icon.png"] = ("ui/apple-touch-icon.png", "image/png"),
         ["/exam-i18n.json"] = ("ui/exam-i18n.json", "application/json; charset=utf-8"),
     };
 
