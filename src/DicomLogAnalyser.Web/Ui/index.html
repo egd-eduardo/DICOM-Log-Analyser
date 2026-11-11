@@ -44,6 +44,27 @@
       <div class="row between"><h1>Overview</h1><button id="ov-refresh" class="ghost">Refresh</button></div>
       <div id="ov-cards" class="cards"></div>
       <div id="ov-gaps"></div>
+      <section id="act" class="act" aria-labelledby="act-title">
+        <div class="row between act-head">
+          <h2 id="act-title">Activity over time</h2>
+          <div class="act-controls">
+            <label>Period <select id="act-hours"><option value="24">Last 24 hours of the logs</option><option value="168">Last 7 days of the logs</option><option value="720">Last 30 days of the logs</option><option value="all">Everything indexed</option></select></label>
+            <label>Source <select id="act-source"><option value="">All sources</option></select></label>
+            <label>Equipment <select id="act-aet"><option value="">All equipment</option></select></label>
+          </div>
+        </div>
+        <p id="act-summary" class="small"></p>
+        <div id="act-legend" class="act-legend" role="group" aria-label="Series shown in the chart"></div>
+        <div id="act-plot" class="act-plot" tabindex="0" role="img" aria-describedby="act-help">
+          <div id="act-lines"></div>
+          <div class="act-sub small muted">Errors and warnings</div>
+          <div id="act-bars"></div>
+          <div id="act-tip" class="act-tip hidden" role="status" aria-live="polite"></div>
+        </div>
+        <div id="act-silent"></div>
+        <p id="act-help" class="muted small">The period ends at the newest indexed line, so older logs chosen for analysis are shown too. Activities are recognised from the wording of each line (for example "C-FIND", "Study received", "C-STORE-RQ sending", "Association accepted"); responses are not counted. The numbers are log lines about each activity, not exact study counts (many services write several lines per transfer), so compare them over time rather than reading them as totals. A dashed final segment marks the last slot, which the logs end inside. <strong>Equipment</strong> lists the modalities the logs name together with their AE title (for example "Mod US, PHILLIS4"); choosing one, or all of one modality, counts only the lines that name those AE titles, so transfers logged without the AE title (often the onward sends) are not included. Point at the chart (or focus it and use the arrow keys) for the numbers of a time slot; click (or press Enter) to open its events in Search. Times are UTC.</p>
+        <details class="act-table"><summary>Show as table</summary><div class="table-wrap"><table id="act-table"><thead><tr><th>From (UTC)</th><th>Events</th><th>Errors</th><th>Warnings</th><th>Received</th><th>Sent</th><th>Queries</th><th>Retrievals</th><th>Associations</th></tr></thead><tbody></tbody></table></div></details>
+      </section>
       <h2>Sources</h2>
       <div class="table-wrap"><table id="ov-sources"><thead><tr><th>Source</th><th>Status</th><th>Events</th><th>Errors</th><th>Warnings</th><th>Indexed period</th><th>Files</th><th>Last scan</th></tr></thead><tbody></tbody></table></div>
       <div class="grid2">
@@ -69,6 +90,7 @@
           <div class="filter-grid">
             <label>Minimum level <select id="f-level"><option value="">Any</option><option value="info">Info</option><option value="warning">Warning</option><option value="error">Error</option></select></label>
             <label>Source <select id="f-source"><option value="">All sources</option></select></label>
+            <label>Equipment (AE title) <select id="f-aet"><option value="">All equipment</option></select></label>
             <label>Category <select id="f-category"><option value="">All categories</option></select></label>
             <label>From (UTC) <input id="f-from" type="datetime-local" step="1"></label>
             <label>To (UTC) <input id="f-to" type="datetime-local" step="1"></label>
